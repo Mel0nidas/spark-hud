@@ -4,7 +4,7 @@
 
 **See your context window, your Max plan limits and every agent at a glance, right above the Claude Code prompt.**
 
-[![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-B91C1C?style=flat-square)](https://github.com/Mel0nidas/spark-hud)
+[![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-D97757?style=flat-square)](https://github.com/Mel0nidas/spark-hud)
 [![Version](https://img.shields.io/github/v/release/Mel0nidas/spark-hud?style=flat-square&color=2F5D8A)](https://github.com/Mel0nidas/spark-hud/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6BAA75?style=flat-square)](LICENSE)
 [![Zero config](https://img.shields.io/badge/config-zero-D9A441?style=flat-square)](#install)
@@ -60,7 +60,7 @@ It is built for people who run long sessions on a **Max subscription** and work 
 - Tips based on your numbers: compact soon, switch to Sonnet for simple work, protect your prompt cache, watch out with too many parallel agents.
 
 ### ✨ It's alive (but calm)
-- The Claude spark **dances** while Claude works `♪┗(✻)┓`, **celebrates** when a turn ends `✦\(✻)/` and **sweats** when the context is nearly full `(✻;)`.
+- **Claude's mascot** lives on the right side of the HUD, away from your numbers. It **blinks** at rest, **dances** while Claude works, **celebrates** when a turn ends and **sweats** when the context is nearly full. It wears the colors of your theme.
 - Animated gradient rules frame the widget so it never blends into the transcript.
 - A soft glint runs along the bars while a turn is in progress.
 
@@ -70,7 +70,7 @@ It is built for people who run long sessions on a **Max subscription** and work 
 
 Seven calm palettes: a dark neutral plus one accent color, starting with **Claude** orange. The theme **only changes when you ask**: press `🎨 theme` or run `/hud-theme` to switch to the next one, and your pick is remembered for new sessions.
 
-<img src="assets/themes.svg" alt="The six themes: Black & Red, Graphite & Amber, Slate & Blue, Forest, Ink & Bone, Wine" width="100%">
+<img src="assets/themes.svg" alt="The seven themes: Claude, Black & Red, Graphite & Amber, Slate & Blue, Forest, Ink & Bone, Wine" width="100%">
 
 ## Install
 

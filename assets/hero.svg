@@ -1,16 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="330" viewBox="0 0 960 330" role="img" aria-label="Spark HUD: an animated HUD above the Claude Code prompt">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="330" viewBox="0 0 960 330" xml:space="preserve" role="img" aria-label="Spark HUD: an animated HUD above the Claude Code prompt">
   <title>Spark HUD</title>
   <defs>
     <linearGradient id="rule" x1="0" y1="0" x2="480" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="reflect">
-      <stop offset="0" stop-color="#7F1D1D"/>
-      <stop offset="0.5" stop-color="#B91C1C"/>
-      <stop offset="1" stop-color="#E05252"/>
+      <stop offset="0" stop-color="#A8553A"/>
+      <stop offset="0.5" stop-color="#D97757"/>
+      <stop offset="1" stop-color="#EBA285"/>
       <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="960 0" dur="6s" repeatCount="indefinite"/>
     </linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#7F1D1D"/>
-      <stop offset="0.55" stop-color="#B91C1C"/>
-      <stop offset="1" stop-color="#E05252"/>
+      <stop offset="0" stop-color="#A8553A"/>
+      <stop offset="0.55" stop-color="#D97757"/>
+      <stop offset="1" stop-color="#EBA285"/>
     </linearGradient>
     <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#E7E5E4" stop-opacity="0"/>
@@ -22,12 +22,12 @@
     <style>
       text { font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; }
       .muted { fill: #8A8580; }
-      .txt { fill: #E7E5E4; }
+      .txt { fill: #EDE6E1; }
       .dim { fill: #57534E; }
       .ok { fill: #6BAA75; font-weight: 700; }
       .warn { fill: #D9A441; font-weight: 700; }
-      .chip { fill: #1C1C1C; }
-      .chipt { fill: #E7E5E4; font-weight: 700; font-size: 12px; }
+      .chip { fill: #1F1B19; }
+      .chipt { fill: #EDE6E1; font-weight: 700; font-size: 12px; }
       .rule { fill: url(#rule); }
       .bold { font-weight: 700; }
       .f { opacity: 0; animation: dance 1.2s steps(1) infinite; }
@@ -48,23 +48,14 @@
 
   <!-- transcript -->
   <text x="24" y="64"><tspan class="muted">&gt; </tspan><tspan class="txt">refactor the auth module and add tests</tspan></text>
-  <text x="24" y="90"><tspan fill="#B91C1C">●</tspan><tspan class="txt bold"> Agent</tspan><tspan class="muted">(Explore: map auth call sites)</tspan></text>
+  <text x="24" y="90"><tspan fill="#D97757">●</tspan><tspan class="txt bold"> Agent</tspan><tspan class="muted">(Explore: map auth call sites)</tspan></text>
   <text x="24" y="112"><tspan fill="#6BAA75">●</tspan><tspan class="txt bold"> Bash</tspan><tspan class="muted">(npm test -- auth)</tspan></text>
 
   <!-- top rule -->
-  <text x="24" y="138" class="rule"><tspan class="bold">──╼ SPARK HUD ╾</tspan>────────────────────────────────────────────────────────────────────────────╼ Black &amp; Red ╾──</text>
+  <text x="24" y="138" class="rule"><tspan class="bold">──╼ SPARK HUD ╾</tspan>────────────────────────────────────────────────────────────────────╼ Claude ╾──</text>
 
-  <!-- row 1: logo + gauges -->
-  <g fill="#B91C1C" class="bold">
-    <text x="24" y="161" class="f f1">♪┗(✻)┓</text>
-    <text x="24" y="161" class="f f2">♫┏(✼)┛</text>
-    <text x="24" y="161" class="f f3">♪┗(✽)┛</text>
-    <text x="24" y="161" class="f f4">♫┏(✾)┓</text>
-  </g>
-  <text x="80" y="161" fill="#E05252" class="tw">✦</text>
-  <text x="90" y="161" fill="#B91C1C" class="tw tw2">·</text>
-  <text x="98" y="161" fill="#7F1D1D" class="tw tw3">✧</text>
-
+  <!-- row 1: gauges -->
+  <g transform="translate(-86,0)">
   <rect x="110" y="148" width="32" height="16" rx="3" class="chip"/><text x="116" y="160" class="chipt">CTX</text>
   <rect x="146" y="150" width="140" height="12" rx="2" fill="#2E2E2E"/>
   <rect x="146" y="150" width="88" height="12" rx="2" fill="url(#bar)"/>
@@ -75,23 +66,30 @@
   <rect x="356" y="150" width="140" height="12" rx="2" fill="#2E2E2E"/>
   <rect x="356" y="150" width="34" height="12" rx="2" fill="url(#bar)"/>
   <g clip-path="url(#fiveFill)"><rect x="330" y="150" width="22" height="12" fill="url(#shine)"><animate attributeName="x" from="330" to="400" dur="1.8s" repeatCount="indefinite"/></rect></g>
-  <text x="502" y="161" class="ok">24%</text><text x="538" y="161" class="muted">↻2h 10m</text>
+  <text x="502" y="161" class="ok">24%</text><text x="546" y="161" class="muted">↻ 2h 10m</text>
 
-  <rect x="610" y="148" width="24" height="16" rx="3" class="chip"/><text x="615" y="160" class="chipt">7D</text>
-  <rect x="638" y="150" width="90" height="12" rx="2" fill="#2E2E2E"/>
-  <rect x="638" y="150" width="11" height="12" rx="2" fill="url(#bar)"/>
-  <text x="734" y="161" class="ok">12%</text>
+  <rect x="628" y="148" width="24" height="16" rx="3" class="chip"/><text x="633" y="160" class="chipt">7D</text>
+  <rect x="656" y="150" width="90" height="12" rx="2" fill="#2E2E2E"/>
+  <rect x="656" y="150" width="11" height="12" rx="2" fill="url(#bar)"/>
+  <text x="752" y="161" class="ok">12%</text>
+  </g>
 
   <!-- row 2: chips -->
-  <text x="24" y="186"><tspan fill="#B91C1C" class="bold">⬢ </tspan><tspan class="txt">opus-5-5</tspan></text>
-  <text x="130" y="186"><tspan fill="#E05252" class="bold">$ </tspan><tspan class="txt">1.84</tspan></text>
-  <text x="200" y="186"><tspan fill="#E05252" class="bold spin">⠹ </tspan><tspan class="txt">3/5 agents</tspan></text>
-  <text x="330" y="186"><tspan fill="#7F1D1D" class="bold">◫ </tspan><tspan class="txt">2 win · 1▶</tspan></text>
+  <text x="24" y="186"><tspan fill="#D97757" class="bold">⬢ </tspan><tspan class="txt">opus-5-5</tspan></text>
+  <text x="130" y="186"><tspan fill="#EBA285" class="bold">$ </tspan><tspan class="txt">1.84</tspan></text>
+  <text x="200" y="186"><tspan fill="#EBA285" class="bold spin">⠹ </tspan><tspan class="txt">3/5 agents</tspan></text>
+  <text x="330" y="186"><tspan fill="#A8553A" class="bold">◫ </tspan><tspan class="txt">2 win · 1▶</tspan></text>
   <text x="450" y="186"><tspan class="muted">→ </tspan><tspan class="txt">Edit auth/session.ts</tspan></text>
-  <text x="880" y="186" class="txt">▾ more</text>
+  <text x="770" y="186" class="txt">▾ more</text>
+
+  <!-- Claude, dancing while a turn runs -->
+  <g class="f f1"><text x="858" y="138" fill="#EBA285" xml:space="preserve">♪     ♫</text><rect x="875.0" y="146.0" width="55.2" height="12.0" fill="#D97757"/><rect x="875.0" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="888.8" y="158.0" width="27.6" height="12.0" fill="#D97757"/><rect x="921.0" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="865.8" y="170.0" width="73.6" height="12.0" fill="#D97757"/><rect x="875.0" y="182.0" width="55.2" height="12.0" fill="#D97757"/><rect x="879.6" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="888.8" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="911.8" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="921.0" y="194.0" width="4.6" height="12.0" fill="#A8553A"/></g>
+  <g class="f f2"><text x="858" y="138" fill="#EBA285" xml:space="preserve">  ♫    ♪</text><rect x="865.8" y="146.0" width="55.2" height="12.0" fill="#D97757"/><rect x="865.8" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="879.6" y="158.0" width="27.6" height="12.0" fill="#D97757"/><rect x="911.8" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="865.8" y="170.0" width="55.2" height="12.0" fill="#D97757"/><rect x="856.6" y="182.0" width="73.6" height="12.0" fill="#D97757"/><rect x="875.0" y="194.0" width="9.2" height="12.0" fill="#A8553A"/><rect x="898.0" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="911.8" y="194.0" width="4.6" height="12.0" fill="#A8553A"/></g>
+  <g class="f f3"><text x="858" y="138" fill="#EBA285" xml:space="preserve">♫    ♪</text><rect x="875.0" y="146.0" width="55.2" height="12.0" fill="#D97757"/><rect x="875.0" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="888.8" y="158.0" width="27.6" height="12.0" fill="#D97757"/><rect x="921.0" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="865.8" y="170.0" width="73.6" height="12.0" fill="#D97757"/><rect x="875.0" y="182.0" width="55.2" height="12.0" fill="#D97757"/><rect x="879.6" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="888.8" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="911.8" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="921.0" y="194.0" width="4.6" height="12.0" fill="#A8553A"/></g>
+  <g class="f f4"><text x="858" y="138" fill="#EBA285" xml:space="preserve"> ♪     ♫</text><rect x="884.2" y="146.0" width="55.2" height="12.0" fill="#D97757"/><rect x="884.2" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="898.0" y="158.0" width="27.6" height="12.0" fill="#D97757"/><rect x="930.2" y="158.0" width="9.2" height="12.0" fill="#D97757"/><rect x="884.2" y="170.0" width="55.2" height="12.0" fill="#D97757"/><rect x="875.0" y="182.0" width="73.6" height="12.0" fill="#D97757"/><rect x="893.4" y="194.0" width="9.2" height="12.0" fill="#A8553A"/><rect x="916.4" y="194.0" width="4.6" height="12.0" fill="#A8553A"/><rect x="930.2" y="194.0" width="4.6" height="12.0" fill="#A8553A"/></g>
 
   <!-- bottom rule -->
-  <text x="24" y="210" class="rule"><tspan class="bold">──╼ 12 turns · 1h 4m ╾</tspan>──────────────────────────────────────────────────────────────────────────────────────</text>
+  <text x="24" y="210" class="rule"><tspan class="bold">──╼ 12 turns · 1h 4m ╾</tspan>────────────────────────────────────────────────────────────────────────</text>
 
   <!-- prompt -->
   <rect x="24" y="226" width="912" height="40" rx="6" fill="none" stroke="#3A3A3A"/>
