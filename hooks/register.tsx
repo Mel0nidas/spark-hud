@@ -36,7 +36,7 @@ const TICK_MS = 220
 const CELEBRATE_MS = 2600
 const PEER_TTL_MS = 10 * 60 * 1000
 
-// ── Animación del logo ───────────────────────────────────────────────────
+// ── Logo animation ───────────────────────────────────────────────────
 
 const SPARKS = ['✻', '✼', '✽', '✾', '✽', '✼']
 const DANCE = ['┗(*)┓', '┏(*)┛', '┗(*)┛', '┏(*)┓']
@@ -54,7 +54,7 @@ function logo(f: number, mood: Mood): string {
   return '  (✻) '
 }
 
-// ── Formato ──────────────────────────────────────────────────────────────
+// ── Formatting ──────────────────────────────────────────────────────────────
 
 function fmtTokens(n: number | undefined): string {
   if (n === undefined) return '—'
@@ -86,7 +86,7 @@ const LIMIT_LABEL: Record<string, string> = {
   seven_day: '7d',
   seven_day_opus: '7d Opus',
   seven_day_sonnet: '7d Sonnet',
-  spend_limit: 'gasto',
+  spend_limit: 'spend',
 }
 
 const LIMIT_SPAN: Record<string, number> = {
@@ -134,16 +134,16 @@ function describeTool(tool: string, input: Record<string, unknown>): string {
     case 'WebFetch':
       return `WebFetch ${cut(str('url').replace(/^https?:\/\//, ''), 40)}`
     case 'WebSearch':
-      return `Busca "${cut(str('query'), 36)}"`
+      return `Search "${cut(str('query'), 36)}"`
     case 'Agent':
     case 'Task':
-      return `lanza agente: ${cut(str('description'), 36)}`
+      return `spawn agent: ${cut(str('description'), 36)}`
     default:
       return tool.startsWith('mcp__') ? tool.split('__').slice(1).join(' · ') : tool
   }
 }
 
-// ── Lectura de figuras del engine ────────────────────────────────────────
+// ── Reading the engine's figures ────────────────────────────────────────
 
 async function refreshUsage($: EngineInterface): Promise<HudUsage> {
   const [u, model] = await Promise.all([$.session.usage(), $.session.model()])
@@ -193,7 +193,7 @@ async function refreshAgents($: EngineInterface, at: number) {
         updatedAt: old?.updatedAt ?? at,
       }
     })
-    // Agentes que ya vimos por sus tool calls pero que la lista aún no nombra.
+    // Agents seen through their tool calls that the list does not name yet.
     for (const a of prev) {
       if (!rows.some(r => r.id === a.id) && at - a.updatedAt < 60_000) rows.push(a)
     }
@@ -201,7 +201,7 @@ async function refreshAgents($: EngineInterface, at: number) {
   })
 }
 
-// ── Ventanas paralelas (otras sesiones) ─────────────────────────────────
+// ── Parallel windows (other sessions) ──────────────────────────────────
 
 async function peersDir($: EngineInterface): Promise<string | undefined> {
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
@@ -245,25 +245,25 @@ async function refreshPeers($: EngineInterface, myId: string, at: number) {
       const peer = JSON.parse(await $.fs.read(`${dir}/${entry.name}`)) as HudPeer
       if (!peer.ended) found.push(peer)
     } catch {
-      // un archivo a medio escribir: se lee en el próximo ciclo
+      // a half-written file: read on the next cycle
     }
   }
   found.sort((a, b) => Number(b.working) - Number(a.working) || b.updatedAt - a.updatedAt)
   await update($, peers, () => found)
 }
 
-// ── Paletas (rotan cada 15 minutos, sincronizadas entre ventanas) ────────
+// ── Palettes (rotate every 15 minutes, in sync across windows) ──────────
 
 type Theme = { name: string; stops: string[]; chip: string; text: string }
 
-// Combinaciones sobrias: un neutro oscuro + un solo color de acento, en tres tonos.
+// Calm pairings: a dark neutral plus one accent color, in three shades.
 const THEMES: Theme[] = [
-  { name: 'Negro y rojo', stops: ['#7F1D1D', '#B91C1C', '#E05252'], chip: '#1C1C1C', text: '#E7E5E4' },
-  { name: 'Grafito y ámbar', stops: ['#78350F', '#B45309', '#D9A441'], chip: '#1F1D1A', text: '#E7E5E4' },
-  { name: 'Pizarra y azul', stops: ['#1E3A5F', '#2F5D8A', '#6C9BC8'], chip: '#1A1F26', text: '#E2E8F0' },
-  { name: 'Bosque', stops: ['#1F4D33', '#2F7A4E', '#6BAA75'], chip: '#1A201C', text: '#E3EAE4' },
-  { name: 'Tinta y hueso', stops: ['#57534E', '#A8A29E', '#E7E5E4'], chip: '#1C1B1A', text: '#F5F5F4' },
-  { name: 'Vino', stops: ['#4C0519', '#881337', '#C2546F'], chip: '#1F1A1C', text: '#F1E7EA' },
+  { name: 'Black & Red', stops: ['#7F1D1D', '#B91C1C', '#E05252'], chip: '#1C1C1C', text: '#E7E5E4' },
+  { name: 'Graphite & Amber', stops: ['#78350F', '#B45309', '#D9A441'], chip: '#1F1D1A', text: '#E7E5E4' },
+  { name: 'Slate & Blue', stops: ['#1E3A5F', '#2F5D8A', '#6C9BC8'], chip: '#1A1F26', text: '#E2E8F0' },
+  { name: 'Forest', stops: ['#1F4D33', '#2F7A4E', '#6BAA75'], chip: '#1A201C', text: '#E3EAE4' },
+  { name: 'Ink & Bone', stops: ['#57534E', '#A8A29E', '#E7E5E4'], chip: '#1C1B1A', text: '#F5F5F4' },
+  { name: 'Wine', stops: ['#4C0519', '#881337', '#C2546F'], chip: '#1F1A1C', text: '#F1E7EA' },
 ]
 
 const THEME_MS = 15 * 60 * 1000
@@ -291,7 +291,7 @@ function lerp(stops: string[], t: number): string {
   return `#${[0, 1, 2].map(j => Math.round(a[j]! + (b[j]! - a[j]!) * k).toString(16).padStart(2, '0')).join('')}`
 }
 
-/** Posición 0..1 que va y vuelve, desplazada por el frame: el degradé "fluye". */
+/** A 0..1 position that goes and comes back, shifted by the frame: the gradient "flows". */
 function wave(i: number, n: number, shift: number): number {
   const p = (((i / Math.max(1, n)) + shift) % 1 + 1) % 1
   return p < 0.5 ? p * 2 : 2 - p * 2
@@ -301,7 +301,7 @@ function statusColor(pct: number): string {
   return pct >= 85 ? HOT : pct >= 60 ? WARN : OK
 }
 
-// ── Dibujo ───────────────────────────────────────────────────────────────
+// ── Drawing ───────────────────────────────────────────────────────────────
 
 type Els = ReturnType<EngineInterface['ui']['resolve']>
 
@@ -340,7 +340,7 @@ function moodOf(v: View): Mood {
 const PARTIAL = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
 const TWINKLE = ['✦', '✧', '⋆', '·', ' ', '·', '⋆', '✧']
 
-/** Texto con un degradé que se desplaza con el frame. */
+/** Text with a gradient that shifts with the frame. */
 function Grad(E: Els, text: string, v: View) {
   const { Text } = E
   const chars = [...text]
@@ -353,7 +353,7 @@ function Grad(E: Els, text: string, v: View) {
   )
 }
 
-/** Barra con degradé, precisión de 1/8 de celda y un brillo que la recorre. */
+/** A gradient bar with 1/8-cell precision and a glint running along it. */
 function GradBar(E: Els, pct: number, width: number, v: View, shimmer: boolean) {
   const { Text } = E
   const clamped = Math.max(0, Math.min(100, pct))
@@ -432,7 +432,7 @@ function Logo(E: Els, v: View) {
   )
 }
 
-/** Línea separadora con degradé animado y un título incrustado. */
+/** A separator line with an animated gradient and an inset title. */
 function Rule(E: Els, cols: number, v: View, title: string, right: string) {
   const { Text } = E
   const head = `──╼ ${title} ╾`
@@ -455,18 +455,18 @@ function Rule(E: Els, cols: number, v: View, title: string, right: string) {
 function tips(v: View): string[] {
   const out: string[] = []
   const ctx = v.u?.ctxPercent ?? 0
-  if (ctx >= 85) out.push('Contexto casi lleno: /compact ahora, o /clear si cambiás de tarea.')
-  else if (ctx >= 60) out.push('Contexto al 60%+: pensá en /compact al terminar este paso.')
+  if (ctx >= 85) out.push('Context almost full: /compact now, or /clear if you are switching tasks.')
+  else if (ctx >= 60) out.push('Context past 60%: consider /compact when this step is done.')
   for (const l of v.u?.limits ?? []) {
     const p = pace(l, v.at)
     if (p.runsOutIn !== undefined)
-      out.push(`Al ritmo actual el límite ${LIMIT_LABEL[l.kind] ?? l.kind} se agota en ~${fmtDur(p.runsOutIn)}: usá /model sonnet para lo simple.`)
+      out.push(`At this pace the ${LIMIT_LABEL[l.kind] ?? l.kind} limit runs out in ~${fmtDur(p.runsOutIn)}: use /model sonnet for simple work.`)
   }
   const cacheBase = v.s.input + v.s.cacheRead + v.s.cacheWrite
   if (cacheBase > 50_000 && v.s.cacheRead / cacheBase < 0.5)
-    out.push('Cache hit bajo: evitá editar CLAUDE.md o cambiar de modelo a mitad de sesión.')
+    out.push('Low cache hit rate: avoid editing CLAUDE.md or switching models mid-session.')
   if (v.ag.filter(a => a.status === 'running').length >= 4)
-    out.push('Muchos agentes en paralelo: cada uno consume del mismo límite 5h.')
+    out.push('Many agents in parallel: each one draws from the same 5h limit.')
   return out
 }
 
@@ -504,9 +504,9 @@ function PeerLine(E: Els, p: HudPeer, v: View, i: number) {
       </Text>
       <Text color={MUTED}> · {p.model}</Text>
       {p.ctxPercent !== undefined ? <Text color={statusColor(p.ctxPercent)}> ctx {p.ctxPercent}%</Text> : null}
-      {p.agentsRunning > 0 ? <Text color={v.t.text}> · {p.agentsRunning} agentes</Text> : null}
+      {p.agentsRunning > 0 ? <Text color={v.t.text}> · {p.agentsRunning} {p.agentsRunning === 1 ? "agent" : "agents"}</Text> : null}
       {p.lastAction ? <Text color={v.t.text}> → {p.lastAction}</Text> : null}
-      {isStale ? <Text color={MUTED}> (sin señal {fmtDur(v.at - p.updatedAt)})</Text> : null}
+      {isStale ? <Text color={MUTED}> (no signal {fmtDur(v.at - p.updatedAt)})</Text> : null}
     </Text>
   )
 }
@@ -559,7 +559,7 @@ function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
             {running > 0 ? SPIN[v.f % SPIN.length] : '⚙'}{' '}
           </Text>
           <Text color={v.t.text}>
-            {running}/{v.ag.length} agentes
+            {running}/{v.ag.length} agents
           </Text>
         </Text>
         {v.pe.length > 0 ? (
@@ -568,7 +568,7 @@ function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
               ◫{' '}
             </Text>
             <Text color={v.t.text}>
-              {v.pe.length} vent{busyPeers > 0 ? ` · ${busyPeers}▶` : ''}
+              {v.pe.length} win{busyPeers > 0 ? ` · ${busyPeers}▶` : ''}
             </Text>
           </Text>
         ) : null}
@@ -577,9 +577,9 @@ function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
             → <Text color={v.t.text}>{v.s.lastAction}</Text>
           </Text>
         ) : null}
-        <Button key="toggle" plain label="▾ más" onPress={onToggle} />
+        <Button key="toggle" plain label="▾ more" onPress={onToggle} />
       </Box>
-      {Rule(E, cols, v, `${v.s.turns} turnos · ${fmtDur(v.at - v.s.startedAt)}`, '')}
+      {Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '')}
     </Box>
   )
 }
@@ -608,13 +608,13 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
           </Text>
           <Text color={MUTED}>
             {' '}
-            · sesión {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turnos
+            · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
           </Text>
         </Text>
         <Box flexDirection="row" gap={2}>
-          <Button key="theme" plain label="🎨 tema" onPress={() => void update($, themeShift, n => n + 1)} />
-          <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agentes' })} />
-          <Button key="toggle" plain label="▴ menos" onPress={onToggle} />
+          <Button key="theme" plain label="🎨 theme" onPress={() => void update($, themeShift, n => n + 1)} />
+          <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agents' })} />
+          <Button key="toggle" plain label="▴ less" onPress={onToggle} />
         </Box>
       </Box>
 
@@ -631,7 +631,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
           {fmtTokens(v.u?.ctxTokens)} / {fmtTokens(v.u?.ctxWindow)}
         </Text>
         <Text color={MUTED}>
-          {v.b?.autoCompactAt ? `  · autocompact en ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? '  · autocompact OFF' : ''}
+          {v.b?.autoCompactAt ? `  · autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? '  · autocompact OFF' : ''}
         </Text>
       </Text>
       {used.slice(0, 6).map((c, i) => {
@@ -649,7 +649,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
       })}
 
       {Header(E, 'PLAN MAX', v)}
-      {(v.u?.limits ?? []).length === 0 ? <Text color={MUTED}>  Sin lectura todavía (llega con la próxima respuesta).</Text> : null}
+      {(v.u?.limits ?? []).length === 0 ? <Text color={MUTED}>  No reading yet (arrives with the next response).</Text> : null}
       {(v.u?.limits ?? []).map(l => {
         const p = pace(l, v.at)
         const diff = p.expected !== undefined ? l.percentUsed - p.expected : undefined
@@ -668,15 +668,15 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
             </Text>
             {diff !== undefined ? (
               <Text>
-                <Text color={MUTED}>{'              ritmo '}</Text>
+                <Text color={MUTED}>{'              pace '}</Text>
                 {p.runsOutIn !== undefined ? (
                   <Text color={HOT} bold>
-                    ▲ se agota en ~{fmtDur(p.runsOutIn)}, antes del reinicio
+                    ▲ runs out in ~{fmtDur(p.runsOutIn)}, before the reset
                   </Text>
                 ) : diff > 5 ? (
-                  <Text color={WARN}>▲ {Math.round(diff)}% por encima de lo esperado</Text>
+                  <Text color={WARN}>▲ {Math.round(diff)}% ahead of the expected pace</Text>
                 ) : (
-                  <Text color={OK}>▼ holgado ({Math.round(-diff)}% por debajo del ritmo lineal)</Text>
+                  <Text color={OK}>▼ comfortable ({Math.round(-diff)}% under the linear pace)</Text>
                 )}
               </Text>
             ) : null}
@@ -684,7 +684,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
         )
       })}
 
-      {Header(E, 'SESIÓN', v)}
+      {Header(E, 'SESSION', v)}
       <Text wrap="truncate-end">
         <Text>{'  '}</Text>
         {Chip(E, `$ ${fmtUsd(v.u?.costUsd).replace('$', '')}`, v)}
@@ -699,19 +699,19 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
       </Text>
       {v.s.working && v.s.lastAction ? (
         <Text wrap="truncate-end">
-          <Text color={MUTED}>  ahora </Text>
+          <Text color={MUTED}>  now </Text>
           <Text color={v.t.text}>{v.s.lastAction}</Text>
           <Text color={MUTED}> ({fmtDur(v.at - v.s.turnStartedAt)})</Text>
         </Text>
       ) : null}
 
-      {Header(E, 'AGENTES', v, `${running.length} activos / ${v.ag.length}`)}
-      {v.ag.length === 0 ? <Text color={MUTED}>  Ninguno en esta sesión.</Text> : null}
+      {Header(E, 'AGENTS', v, `${running.length} active / ${v.ag.length}`)}
+      {v.ag.length === 0 ? <Text color={MUTED}>  None in this session.</Text> : null}
       {shownAgents.map((a, i) => AgentLine(E, a, v, i))}
-      {v.ag.length > shownAgents.length ? <Text color={MUTED}>  … {v.ag.length - shownAgents.length} más en ◫ panel</Text> : null}
+      {v.ag.length > shownAgents.length ? <Text color={MUTED}>  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
 
-      {Header(E, 'OTRAS VENTANAS', v, `${v.pe.length}`)}
-      {v.pe.length === 0 ? <Text color={MUTED}>  Ninguna otra sesión con spark-hud abierta.</Text> : null}
+      {Header(E, 'OTHER WINDOWS', v, `${v.pe.length}`)}
+      {v.pe.length === 0 ? <Text color={MUTED}>  No other session running spark-hud.</Text> : null}
       {v.pe.slice(0, 6).map((p, i) => PeerLine(E, p, v, i))}
 
       {advice.length > 0 ? Header(E, 'TIPS', v) : null}
@@ -721,7 +721,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
           {t}
         </Text>
       ))}
-      {Rule(E, cols, v, `tema ${v.t.name} · cambia cada 15 min`, '')}
+      {Rule(E, cols, v, `theme ${v.t.name} · rotates every 15 min`, '')}
     </Box>
   )
 }
@@ -731,7 +731,7 @@ async function toggle($: EngineInterface, columns?: number) {
   if (open) await refreshBreakdown($, columns ?? 100).catch(() => undefined)
 }
 
-// ── Registro ─────────────────────────────────────────────────────────────
+// ── Registration ─────────────────────────────────────────────────────────────
 
 export const register: Register = on => {
   let myId = ''
@@ -748,9 +748,9 @@ export const register: Register = on => {
     await update($, now, () => at)
     await refreshUsage($).catch(() => undefined)
 
-    await $.command.register({ name: 'hud', description: 'Spark HUD: expandir / contraer el panel sobre el prompt' })
-    await $.command.register({ name: 'hud-tema', description: 'Spark HUD: pasar al siguiente tema de colores' })
-    await $.command.register({ name: 'hud-panel', description: 'Spark HUD: abrir el panel lateral de agentes y ventanas' })
+    await $.command.register({ name: 'hud', description: 'Spark HUD: expand / collapse the HUD above the prompt' })
+    await $.command.register({ name: 'hud-theme', description: 'Spark HUD: switch to the next color theme' })
+    await $.command.register({ name: 'hud-panel', description: 'Spark HUD: open the side panel with agents and windows' })
 
     ticker?.cancel()
     ticker = $.clock.every(TICK_MS, () => {
@@ -760,22 +760,22 @@ export const register: Register = on => {
         const [s, ag] = await Promise.all([read($, stats), read($, agents)])
         const hasRunning = ag.some(a => a.status === 'running' || a.status === 'pending')
         const isAnimating = s.working || at < s.celebrateUntil || hasRunning
-        // rápido mientras trabaja; en reposo, un brillo suave (~1 fps)
+        // fast while working; at rest, a gentle shimmer (~1 fps)
         if (isAnimating || ticks % 4 === 0) {
           await update($, frame, f => (f + 1) % 10_000)
           await update($, now, () => at)
         }
         const theme = themeIndex(at, await read($, themeShift))
-        if (lastTheme !== -1 && theme !== lastTheme) $.ui.toast(`🎨 Spark HUD · tema ${THEMES[theme]?.name ?? ''}`)
+        if (lastTheme !== -1 && theme !== lastTheme) $.ui.toast(`🎨 Spark HUD · theme ${THEMES[theme]?.name ?? ''}`)
         lastTheme = theme
-        // cada ~1s mientras algo corre: agentes
+        // every ~1s while something runs: agents
         if ((s.working || hasRunning) && ticks % 5 === 0) await refreshAgents($, at).catch(() => undefined)
-        // cada ~5s: latido para otras ventanas y lectura de ellas
+        // every ~5s: heartbeat for other windows, and read theirs
         if (ticks % 23 === 0) {
           await heartbeat($, myId).catch(() => undefined)
           await refreshPeers($, myId, at).catch(() => undefined)
         }
-        // cada ~30s en reposo: relojes de reinicio
+        // every ~30s at rest: reset countdowns
         if (!isAnimating && ticks % 136 === 0) {
           await update($, now, () => at)
           await refreshUsage($).catch(() => undefined)
@@ -795,23 +795,23 @@ export const register: Register = on => {
 
   on('command.run', { command: 'hud' }, async $ => {
     await toggle($)
-    return { text: (await read($, isExpanded)) ? 'Spark HUD expandido.' : 'Spark HUD contraído.' }
+    return { text: (await read($, isExpanded)) ? 'Spark HUD expanded.' : 'Spark HUD collapsed.' }
   })
 
-  on('command.run', { command: 'hud-tema' }, async $ => {
+  on('command.run', { command: 'hud-theme' }, async $ => {
     await update($, themeShift, n => n + 1)
     const at = await $.clock.now()
-    return { text: `Tema: ${THEMES[themeIndex(at, await read($, themeShift))]?.name ?? ''}` }
+    return { text: `Theme: ${THEMES[themeIndex(at, await read($, themeShift))]?.name ?? ''}` }
   })
 
   on('command.run', { command: 'hud-panel' }, async $ => {
-    const opened = await $.ui.open({ id: PANE, title: 'Spark HUD · agentes' })
-    return { text: opened.isPlaced ? 'Panel de Spark HUD abierto.' : 'Panel listo: se muestra al ensanchar la terminal (o en modo fullscreen).' }
+    const opened = await $.ui.open({ id: PANE, title: 'Spark HUD · agents' })
+    return { text: opened.isPlaced ? 'Spark HUD panel opened.' : 'Panel ready: it shows once the terminal is wider (or in fullscreen mode).' }
   })
 
   on('prompt.submit', async ($, e, next) => {
     const at = await $.clock.now()
-    await update($, stats, s => ({ ...s, working: true, turnStartedAt: at, turnTools: 0, lastAction: 'pensando…' }))
+    await update($, stats, s => ({ ...s, working: true, turnStartedAt: at, turnTools: 0, lastAction: 'thinking…' }))
     await update($, now, () => at)
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -824,7 +824,7 @@ export const register: Register = on => {
       await update($, agents, list =>
         list.some(a => a.id === id)
           ? list.map(a => (a.id === id ? { ...a, lastAction: action, tools: a.tools + 1, updatedAt: at } : a))
-          : [...list, { id, name: '', type: 'agente', description: '', status: 'running', lastAction: action, tools: 1, startedAt: at, updatedAt: at }],
+          : [...list, { id, name: '', type: 'agent', description: '', status: 'running', lastAction: action, tools: 1, startedAt: at, updatedAt: at }],
       )
     } else {
       await update($, stats, s => ({ ...s, lastAction: action, turnTools: s.turnTools + 1, toolCalls: s.toolCalls + 1 }))
@@ -838,7 +838,7 @@ export const register: Register = on => {
     const at = await $.clock.now()
     if (e.agentId) {
       const id = e.agentId
-      await update($, agents, list => list.map(a => (a.id === id ? { ...a, lastAction: 'terminó', updatedAt: at } : a)))
+      await update($, agents, list => list.map(a => (a.id === id ? { ...a, lastAction: 'done', updatedAt: at } : a)))
       await refreshAgents($, at).catch(() => undefined)
       return next(e)
     }
@@ -849,7 +849,7 @@ export const register: Register = on => {
       turns: s.turns + 1,
       lastTurnMs: e.durationMs,
       lastTurnTools: s.turnTools,
-      lastAction: e.isAborted ? 'interrumpido' : 'listo',
+      lastAction: e.isAborted ? 'interrupted' : 'done',
       input: s.input + (u?.input_tokens ?? 0),
       output: s.output + (u?.output_tokens ?? 0),
       cacheRead: s.cacheRead + (u?.cache_read_input_tokens ?? 0),
@@ -870,10 +870,10 @@ export const register: Register = on => {
     const ctx = e.context.percent ?? 0
     for (const l of e.rateLimits) {
       if (e.changed.includes('rateLimits') && (l.percentUsed >= 90 || l.percentUsed === 75)) {
-        $.ui.toast(`✻ Límite ${LIMIT_LABEL[l.kind] ?? l.kind} al ${Math.round(l.percentUsed)}%`)
+        $.ui.toast(`✻ ${LIMIT_LABEL[l.kind] ?? l.kind} limit at ${Math.round(l.percentUsed)}%`)
       }
     }
-    if (e.changed.includes('context') && ctx >= 85) $.ui.toast(`✻ Contexto al ${ctx}%: buen momento para /compact`)
+    if (e.changed.includes('context') && ctx >= 85) $.ui.toast(`✻ Context at ${ctx}%: a good moment to /compact`)
     return result
   })
 
@@ -896,14 +896,14 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {compactCard(E, v, cols, () => void toggle($))}
         <Text bold color="claude">
-          Agentes de esta sesión <Text dimColor>({v.ag.length})</Text>
+          Agents in this session <Text dimColor>({v.ag.length})</Text>
         </Text>
-        {v.ag.length === 0 ? <Text dimColor>  Ninguno todavía.</Text> : null}
+        {v.ag.length === 0 ? <Text dimColor>  None yet.</Text> : null}
         {v.ag.map((a, i) => AgentLine(E, a, v, i))}
         <Text bold color="claude">
-          Otras ventanas <Text dimColor>({v.pe.length})</Text>
+          Other windows <Text dimColor>({v.pe.length})</Text>
         </Text>
-        {v.pe.length === 0 ? <Text dimColor>  Abrí otra sesión de Claude Code: aparece acá sola.</Text> : null}
+        {v.pe.length === 0 ? <Text dimColor>  Open another Claude Code session: it shows up here on its own.</Text> : null}
         {v.pe.map((p, i) => PeerLine(E, p, v, i))}
       </Box>
     )

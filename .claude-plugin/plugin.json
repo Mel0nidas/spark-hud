@@ -1,7 +1,11 @@
 {
   "name": "spark-hud",
-  "version": "0.1.0",
-  "author": { "name": "agusneocube" },
-  "description": "HUD animado sobre el prompt: context window, límites del plan Max (5h/7d) con ritmo de consumo, costo, agentes en vivo y otras ventanas de Claude Code.",
+  "version": "0.2.0",
+  "author": { "name": "agusneocube", "url": "https://github.com/Mel0nidas" },
+  "description": "An animated HUD above the Claude Code prompt: context window, Max plan limits (5h/7d) with burn-rate pace, cost, live subagents and your other Claude Code windows.",
+  "homepage": "https://github.com/Mel0nidas/spark-hud",
+  "repository": "https://github.com/Mel0nidas/spark-hud",
+  "license": "MIT",
+  "keywords": ["hud", "context-window", "rate-limits", "max-plan", "usage", "agents", "statusline", "dashboard"],
   "types": "./types/index.d.ts"
 }

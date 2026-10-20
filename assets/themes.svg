@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="250" viewBox="0 0 960 250" role="img" aria-label="Six calm color themes that rotate every 15 minutes">
+  <title>Spark HUD themes</title>
+  <defs>
+    <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#7F1D1D"/><stop offset=".5" stop-color="#B91C1C"/><stop offset="1" stop-color="#E05252"/></linearGradient>
+    <linearGradient id="g2" x1="0" x2="1"><stop offset="0" stop-color="#78350F"/><stop offset=".5" stop-color="#B45309"/><stop offset="1" stop-color="#D9A441"/></linearGradient>
+    <linearGradient id="g3" x1="0" x2="1"><stop offset="0" stop-color="#1E3A5F"/><stop offset=".5" stop-color="#2F5D8A"/><stop offset="1" stop-color="#6C9BC8"/></linearGradient>
+    <linearGradient id="g4" x1="0" x2="1"><stop offset="0" stop-color="#1F4D33"/><stop offset=".5" stop-color="#2F7A4E"/><stop offset="1" stop-color="#6BAA75"/></linearGradient>
+    <linearGradient id="g5" x1="0" x2="1"><stop offset="0" stop-color="#57534E"/><stop offset=".5" stop-color="#A8A29E"/><stop offset="1" stop-color="#E7E5E4"/></linearGradient>
+    <linearGradient id="g6" x1="0" x2="1"><stop offset="0" stop-color="#4C0519"/><stop offset=".5" stop-color="#881337"/><stop offset="1" stop-color="#C2546F"/></linearGradient>
+    <style>
+      text { font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; }
+      .n { fill: #E7E5E4; font-size: 14px; font-weight: 700; }
+      .s { fill: #8A8580; font-size: 12px; }
+      .card { fill: #121212; stroke: #262626; }
+      .fill { animation: grow 4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: left; }
+      @keyframes grow { from { transform: scaleX(0.35); } to { transform: scaleX(1); } }
+      .d2 { animation-delay: -0.7s; } .d3 { animation-delay: -1.4s; } .d4 { animation-delay: -2.1s; } .d5 { animation-delay: -2.8s; } .d6 { animation-delay: -3.5s; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="959" height="249" rx="12" fill="#0E0E0E" stroke="#262626"/>
+  <text x="24" y="36" class="n" style="font-size:15px">Six calm themes · one dark neutral + one accent · rotate every 15 min, in sync across windows</text>
+
+  <g transform="translate(24,56)"><rect width="294" height="80" rx="8" class="card"/><text x="16" y="28" class="n">Black &amp; Red</text><text x="16" y="46" class="s">#7F1D1D · #B91C1C · #E05252</text><rect x="16" y="58" width="262" height="10" rx="2" fill="#2E2E2E"/><rect x="16" y="58" width="262" height="10" rx="2" fill="url(#g1)" class="fill"/></g>
+  <g transform="translate(333,56)"><rect width="294" height="80" rx="8" class="card"/><text x="16" y="28" class="n">Graphite &amp; Amber</text><text x="16" y="46" class="s">#78350F · #B45309 · #D9A441</text><rect x="16" y="58" width="262" height="10" rx="2" fill="#2E2E2E"/><rect x="16" y="58" width="262" height="10" rx="2" fill="url(#g2)" class="fill d2"/></g>
+  <g transform="translate(642,56)"><rect width="294" height="80" rx="8" class="card"/><text x="16" y="28" class="n">Slate &amp; Blue</text><text x="16" y="46" class="s">#1E3A5F · #2F5D8A · #6C9BC8</text><rect x="16" y="58" width="262" height="10" rx="2" fill="#2E2E2E"/><rect x="16" y="58" width="262" height="10" rx="2" fill="url(#g3)" class="fill d3"/></g>
+  <g transform="translate(24,148)"><rect width="294" height="80" rx="8" class="card"/><text x="16" y="28" class="n">Forest</text><text x="16" y="46" class="s">#1F4D33 · #2F7A4E · #6BAA75</text><rect x="16" y="58" width="262" height="10" rx="2" fill="#2E2E2E"/><rect x="16" y="58" width="262" height="10" rx="2" fill="url(#g4)" class="fill d4"/></g>
+  <g transform="translate(333,148)"><rect width="294" height="80" rx="8" class="card"/><text x="16" y="28" class="n">Ink &amp; Bone</text><text x="16" y="46" class="s">#57534E · #A8A29E · #E7E5E4</text><rect x="16" y="58" width="262" height="10" rx="2" fill="#2E2E2E"/><rect x="16" y="58" width="262" height="10" rx="2" fill="url(#g5)" class="fill d5"/></g>
+  <g transform="translate(642,148)"><rect width="294" height="80" rx="8" class="card"/><text x="16" y="28" class="n">Wine</text><text x="16" y="46" class="s">#4C0519 · #881337 · #C2546F</text><rect x="16" y="58" width="262" height="10" rx="2" fill="#2E2E2E"/><rect x="16" y="58" width="262" height="10" rx="2" fill="url(#g6)" class="fill d6"/></g>
+</svg>

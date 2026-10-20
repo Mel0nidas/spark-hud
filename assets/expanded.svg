@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-label="Spark HUD expanded view: context breakdown, Max plan limits with pace, session stats, agents and other windows">
+  <title>Spark HUD — expanded view</title>
+  <defs>
+    <linearGradient id="rule" x1="0" y1="0" x2="480" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="reflect">
+      <stop offset="0" stop-color="#1E3A5F"/><stop offset="0.5" stop-color="#2F5D8A"/><stop offset="1" stop-color="#6C9BC8"/>
+      <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="960 0" dur="8s" repeatCount="indefinite"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1E3A5F"/><stop offset="0.55" stop-color="#2F5D8A"/><stop offset="1" stop-color="#6C9BC8"/>
+    </linearGradient>
+    <linearGradient id="warnbar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1E3A5F"/><stop offset="1" stop-color="#D9A441"/>
+    </linearGradient>
+    <style>
+      text { font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; }
+      .muted { fill: #8A8580; } .txt { fill: #E2E8F0; } .b { font-weight: 700; }
+      .h { fill: #6C9BC8; font-weight: 700; letter-spacing: 1px; }
+      .ok { fill: #6BAA75; font-weight: 700; } .warn { fill: #D9A441; font-weight: 700; } .hot { fill: #D9534F; }
+      .chip { fill: #1A1F26; } .chipt { fill: #E2E8F0; font-weight: 700; font-size: 12px; }
+      .rule { fill: url(#rule); }
+      .spin { animation: blink 0.8s steps(2) infinite; }
+      .spin2 { animation-delay: -0.4s; }
+      @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="959" height="559" rx="12" fill="#0E0E0E" stroke="#262626"/>
+  <circle cx="22" cy="20" r="6" fill="#3A3A3A"/><circle cx="42" cy="20" r="6" fill="#3A3A3A"/><circle cx="62" cy="20" r="6" fill="#3A3A3A"/>
+  <text x="480" y="25" text-anchor="middle" class="muted" style="font-size:12px">/hud — expanded view</text>
+
+  <text x="24" y="58" class="rule"><tspan class="b">──╼ SPARK HUD ╾</tspan>───────────────────────────────────────────────────────────────────────────╼ Slate &amp; Blue ╾──</text>
+  <text x="24" y="82"><tspan fill="#6C9BC8" class="b">  (✻) ✦·✧</tspan><tspan class="txt">  claude-opus-5-5</tspan><tspan class="muted"> · session 1h 4m · 12 turns</tspan></text>
+  <text x="936" y="82" text-anchor="end" class="txt">🎨 theme   ◫ panel   ▴ less</text>
+
+  <!-- context -->
+  <text x="24" y="112" class="h">◆ CONTEXT WINDOW</text>
+  <rect x="44" y="121" width="260" height="12" rx="2" fill="#2E2E2E"/><rect x="44" y="121" width="164" height="12" rx="2" fill="url(#warnbar)"/>
+  <text x="312" y="132"><tspan class="warn">63%</tspan><tspan class="txt">  126k / 200k</tspan><tspan class="muted">  · autocompact at 167k</tspan></text>
+  <g>
+    <rect x="60" y="143" width="112" height="9" rx="1" fill="#2F5D8A"/><text x="182" y="152"><tspan class="txt">  71k </tspan><tspan class="muted">Messages</tspan></text>
+    <rect x="60" y="161" width="42" height="9" rx="1" fill="#6C9BC8"/><text x="182" y="170"><tspan class="txt">  27k </tspan><tspan class="muted">System tools</tspan></text>
+    <rect x="60" y="179" width="26" height="9" rx="1" fill="#1E3A5F"/><text x="182" y="188"><tspan class="txt">  16k </tspan><tspan class="muted">MCP tools</tspan></text>
+    <rect x="60" y="197" width="14" height="9" rx="1" fill="#2F5D8A"/><text x="182" y="206"><tspan class="txt">   9k </tspan><tspan class="muted">Memory files</tspan></text>
+  </g>
+
+  <!-- limits -->
+  <text x="24" y="236" class="h">◆ MAX PLAN</text>
+  <rect x="44" y="245" width="80" height="16" rx="3" class="chip"/><text x="50" y="257" class="chipt">5H</text>
+  <rect x="130" y="247" width="260" height="12" rx="2" fill="#2E2E2E"/><rect x="130" y="247" width="62" height="12" rx="2" fill="url(#bar)"/>
+  <text x="398" y="258"><tspan class="ok">24%</tspan><tspan class="muted">  ↻ 2h 10m</tspan></text>
+  <text x="130" y="278"><tspan class="muted">pace </tspan><tspan class="ok">▼ comfortable (32% under the linear pace)</tspan></text>
+  <rect x="44" y="289" width="80" height="16" rx="3" class="chip"/><text x="50" y="301" class="chipt">7D</text>
+  <rect x="130" y="291" width="260" height="12" rx="2" fill="#2E2E2E"/><rect x="130" y="291" width="182" height="12" rx="2" fill="url(#warnbar)"/>
+  <text x="398" y="302"><tspan class="warn">70%</tspan><tspan class="muted">  ↻ 1d 6h</tspan></text>
+  <text x="130" y="322"><tspan class="muted">pace </tspan><tspan class="hot b">▲ runs out in ~22h, before the reset</tspan></text>
+
+  <!-- session -->
+  <text x="24" y="352" class="h">◆ SESSION</text>
+  <g>
+    <rect x="44" y="361" width="64" height="18" rx="3" class="chip"/><text x="52" y="374" class="chipt">$ 1.84</text>
+    <rect x="114" y="361" width="56" height="18" rx="3" class="chip"/><text x="122" y="374" class="chipt">⚒ 87</text>
+    <rect x="176" y="361" width="100" height="18" rx="3" class="chip"/><text x="184" y="374" class="chipt">⏱ 34s/12⚒</text>
+    <rect x="282" y="361" width="92" height="18" rx="3" class="chip"/><text x="290" y="374"><tspan class="chipt">cache </tspan><tspan class="ok" style="font-size:12px">91%</tspan></text>
+    <rect x="380" y="361" width="80" height="18" rx="3" class="chip"/><text x="388" y="374" class="chipt">out 48k</text>
+  </g>
+
+  <!-- agents -->
+  <text x="24" y="406"><tspan class="h">◆ AGENTS</tspan><tspan class="muted"> 2 active / 3</tspan></text>
+  <text x="24" y="428"><tspan fill="#6C9BC8" class="spin"> ⠹ </tspan><tspan fill="#1E3A5F" class="b" style="fill:#6C9BC8">Explore</tspan><tspan class="muted"> · map auth call sites</tspan><tspan class="txt"> → Grep verifySession</tspan><tspan class="muted">  14⚒ 2m</tspan></text>
+  <text x="24" y="448"><tspan fill="#2F5D8A" class="spin spin2"> ⠼ </tspan><tspan class="b" style="fill:#8DB4DA">test-writer</tspan><tspan class="muted"> · cover token refresh</tspan><tspan class="txt"> → Bash: npm test -- auth</tspan><tspan class="muted">  9⚒ 1m</tspan></text>
+  <text x="24" y="468"><tspan class="ok"> ✔ </tspan><tspan class="b" style="fill:#A9C4E0">general-purpose</tspan><tspan class="muted"> · audit dependencies</tspan><tspan class="txt"> → done</tspan><tspan class="muted">  22⚒</tspan></text>
+
+  <!-- windows -->
+  <text x="24" y="498"><tspan class="h">◆ OTHER WINDOWS</tspan><tspan class="muted"> 2</tspan></text>
+  <text x="24" y="520"><tspan fill="#6C9BC8" class="spin"> ⠧ </tspan><tspan class="b" style="fill:#6C9BC8">landing-page</tspan><tspan class="muted"> · claude-sonnet-5-5</tspan><tspan class="ok" style="font-weight:400"> ctx 31%</tspan><tspan class="txt"> → Edit Hero.tsx</tspan></text>
+  <text x="24" y="540"><tspan class="muted"> ◦ </tspan><tspan class="b" style="fill:#8DB4DA">infra</tspan><tspan class="muted"> · claude-opus-5-5</tspan><tspan class="warn" style="font-weight:400"> ctx 78%</tspan><tspan class="muted"> · 1 agent → done</tspan></text>
+</svg>

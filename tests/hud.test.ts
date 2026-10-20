@@ -12,7 +12,7 @@ const BAND = {
   },
 } as const
 
-test('la barra muestra contexto, 5h y costo, y se expande', async ($, on) => {
+test('the band shows context, 5h limit and cost, and expands', async ($, on) => {
   mock.clock(on)
   const resetsAt = new Date(Date.now() + 2 * 3600_000).toISOString()
   const reading = {
@@ -39,7 +39,7 @@ test('la barra muestra contexto, 5h y costo, y se expande', async ($, on) => {
 
     await ui.press({ key: 'toggle' })
     expect(await ui.find({ key: "theme" })).toBeDefined()
-    expect(await ui.find({ text: /autocompact|Sin lectura|ritmo|↻/ })).toBeDefined()
+    expect(await ui.find({ text: /autocompact|No reading|pace|↻/ })).toBeDefined()
 
     await ui.press({ key: 'toggle' })
     expect(await ui.find({ key: "theme" })).toBeUndefined()
