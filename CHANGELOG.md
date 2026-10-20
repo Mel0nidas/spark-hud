@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- **Agent viewer**: click any agent (or run `/hud-agents`) to open a live panel with its task, messages and every tool call with its result.
+- Per-agent context usage and model, read from each model request.
+- `◀ ▶` to flip between agents, `Esc` to close.
+
 ## 0.2.0
 
 - Full English UI: labels, tips, toasts and command descriptions.

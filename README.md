@@ -25,7 +25,7 @@ It is built for people who run long sessions on a **Max subscription** and work 
 |---|---|
 | You find out the context is full when autocompact kicks in | A live bar shows how full the context is, and where autocompact will trigger |
 | "Am I going to hit my 5-hour limit?" is a guess | A **pace forecast** compares your usage with the time left and warns you *before* the window runs out |
-| Subagents are a black box until they report back | Each agent's **current action** shows live: `→ Bash: npm test`, `→ Edit session.ts` |
+| Subagents are a black box until they report back | Each agent's **current action** shows live, and one click opens its full transcript |
 | Checking your other Claude windows means alt-tabbing through them | **Every open Claude Code window** shows its project, model, context fill and current action in one list |
 
 ## Features
@@ -43,6 +43,13 @@ It is built for people who run long sessions on a **Max subscription** and work 
 ### 🤖 Agents, without opening their transcripts
 - Every subagent and teammate in the session, with a spinner, its type, its task and **its latest tool call**.
 - Tool count and running time for each one; finished agents get ✔, failed ones get ✘.
+
+### 🔍 Agent viewer: see inside any subagent
+- **Click an agent** in the HUD (or run `/hud-agents`) and a panel opens with its **live transcript**: the task it got, what it is saying, and every tool call with a one-line result (errors in red).
+- Shows the agent's **own context usage**, its model, tool count and running time.
+- Flip between agents with `◀ ▶` and close it with `Esc`. It updates every second while the agent runs, and you never leave your current window.
+
+<img src="assets/viewer.svg" alt="Agent viewer: a subagent's task, messages and tool calls with results, live" width="100%">
 
 ### 🪟 All your windows in one place
 - Every Claude Code session running Spark HUD sends a small heartbeat. Each window then lists the others: project, model, context %, running agents and what each one is doing **right now**.
@@ -92,6 +99,7 @@ Claude Code reads a folder marketplace straight from disk. After you edit the fi
 | Command / control | What it does |
 |---|---|
 | `▾ more` / `▴ less` or `/hud` | Expand or collapse the dashboard |
+| Click an agent or `/hud-agents` | Open the agent viewer with its live transcript (`◀ ▶` switch, `Esc` closes) |
 | `◫ panel` or `/hud-panel` | Open the side panel with all agents and windows |
 | `🎨 theme` or `/hud-theme` | Switch to the next color theme |
 | `ctrl+x tab` | Focus the HUD to use its buttons from the keyboard |
@@ -107,6 +115,7 @@ Spark HUD is a **Claude Code mod**: a single TypeScript hooks module that runs i
 | Context, limits, cost | `$.session.usage()` and the `session.measure` event: the same figures as the status line, pushed when they change |
 | Context breakdown | `$.session.usage({ breakdown: 'summary' })`, a local estimate that makes no API calls |
 | Agents | `$.agent.list()` plus each `tool.call` that carries an `agentId` |
+| Agent viewer | `$.session.messages({ agentId })` (the subagent's own transcript) and each `turn.step`'s usage for its context |
 | Other windows | A small JSON heartbeat per session in `~/.claude/spark-hud/sessions/`, written every ~5 s |
 | Animation | One timer: ~4.5 fps while Claude works, ~1 fps at rest |
 
@@ -130,7 +139,6 @@ To hot-reload while you edit, run `claude --plugin-dir ./spark-hud`. Saving a fi
 
 - [ ] Pin a favorite theme instead of rotating
 - [ ] Sparkline of context growth per turn
-- [ ] Per-agent token usage
 - [ ] Click a window in the list to bring it to the front
 
 Ideas and PRs are welcome. Open an issue!

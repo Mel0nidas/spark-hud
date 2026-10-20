@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="380" viewBox="0 0 960 380" role="img" aria-label="Agent viewer: a subagent's task, its messages and every tool call with its result, live">
+  <title>Spark HUD — agent viewer</title>
+  <defs>
+    <linearGradient id="rule" x1="0" y1="0" x2="480" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="reflect">
+      <stop offset="0" stop-color="#1F4D33"/><stop offset="0.5" stop-color="#2F7A4E"/><stop offset="1" stop-color="#6BAA75"/>
+      <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="960 0" dur="7s" repeatCount="indefinite"/>
+    </linearGradient>
+    <style>
+      text { font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; }
+      .muted { fill: #8A8580; } .txt { fill: #E3EAE4; } .b { font-weight: 700; }
+      .acc { fill: #6BAA75; } .ok { fill: #6BAA75; } .hot { fill: #D9534F; }
+      .chip { fill: #1A201C; } .chipt { fill: #E3EAE4; font-weight: 700; font-size: 12px; }
+      .rule { fill: url(#rule); }
+      .spin { animation: blink 0.8s steps(2) infinite; }
+      @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+      .new { animation: appear 6s ease-out infinite; }
+      @keyframes appear { 0%, 40% { opacity: 0; } 55%, 100% { opacity: 1; } }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="959" height="379" rx="12" fill="#0E0E0E" stroke="#262626"/>
+  <circle cx="22" cy="20" r="6" fill="#3A3A3A"/><circle cx="42" cy="20" r="6" fill="#3A3A3A"/><circle cx="62" cy="20" r="6" fill="#3A3A3A"/>
+  <text x="480" y="25" text-anchor="middle" class="muted" style="font-size:12px">click an agent → live viewer</text>
+
+  <text x="24" y="58" class="rule"><tspan class="b">──╼ AGENT · Explore ╾</tspan>──────────────────────────────────────────────────────────────────────╼ running ╾──</text>
+  <text x="24" y="84"><tspan class="acc b spin">⠹ </tspan><tspan class="acc b">Explore</tspan><tspan class="muted"> · map auth call sites</tspan></text>
+  <text x="936" y="84" text-anchor="end" class="txt">◀   ▶   ✕</text>
+
+  <rect x="24" y="96" width="52" height="18" rx="3" class="chip"/><text x="32" y="109" class="chipt">⚒ 14</text>
+  <rect x="82" y="96" width="62" height="18" rx="3" class="chip"/><text x="90" y="109" class="chipt">⏱ 2m</text>
+  <rect x="150" y="96" width="132" height="18" rx="3" class="chip"/><text x="158" y="109"><tspan class="chipt">ctx 38k · </tspan><tspan class="ok" style="font-size:12px;font-weight:700">19%</tspan></text>
+  <rect x="288" y="96" width="96" height="18" rx="3" class="chip"/><text x="296" y="109" class="chipt">haiku-5-5</text>
+
+  <text x="24" y="140"><tspan class="acc b">  task </tspan><tspan class="txt">Find every caller of verifySession and note which ones skip the refresh check</tspan></text>
+  <text x="24" y="166"><tspan class="acc">  ✻ </tspan><tspan class="txt">I'll start by locating the definition, then search for call sites.</tspan></text>
+  <text x="24" y="190"><tspan class="ok">  ⚒ </tspan><tspan class="txt b">Grep verifySession</tspan><tspan class="muted">  src/auth/session.ts  (+11 lines)</tspan></text>
+  <text x="24" y="214"><tspan class="ok">  ⚒ </tspan><tspan class="txt b">Read session.ts</tspan><tspan class="muted">  export async function verifySession(token: string) {  (+184 lines)</tspan></text>
+  <text x="24" y="238"><tspan class="hot">  ✘ </tspan><tspan class="txt b">Read legacy.ts</tspan><tspan class="hot">  File does not exist.</tspan></text>
+  <text x="24" y="262"><tspan class="acc">  ✻ </tspan><tspan class="txt">Three routes call it directly; api/admin.ts skips the refresh check.</tspan></text>
+  <text x="24" y="286" class="new"><tspan class="ok">  ⚒ </tspan><tspan class="txt b">Bash: git log -L '/verifySession/,+20:src/api/admin.ts'</tspan></text>
+  <text x="24" y="310" class="new"><tspan class="acc spin">  ⠼ </tspan><tspan class="txt b">Read admin.ts</tspan></text>
+
+  <text x="24" y="346" class="rule"><tspan class="b">──╼ live · updates every second ╾</tspan>────────────────────────────────────────────────────────────────────────────</text>
+</svg>

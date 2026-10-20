@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HudAgent, HudBreakdown, HudLimit, HudPeer, HudStats, HudUsage } from '../types'
+import type { HudAgent, HudBreakdown, HudLimit, HudPeer, HudStats, HudUsage, HudViewRow } from '../types'
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -29,9 +29,12 @@ const breakdown = atom({ plugin: 'spark-hud', key: 'breakdown' } as const, null)
 const agents = atom({ plugin: 'spark-hud', key: 'agents' } as const, [])
 const peers = atom({ plugin: 'spark-hud', key: 'peers' } as const, [])
 const themeShift = atom({ plugin: 'spark-hud', key: 'themeShift' } as const, 0)
+const viewerAgent = atom({ plugin: 'spark-hud', key: 'viewerAgent' } as const, null)
+const viewerRows = atom({ plugin: 'spark-hud', key: 'viewerRows' } as const, [])
 const stats = atom({ plugin: 'spark-hud', key: 'stats' } as const, INITIAL_STATS)
 
 const PANE = 'spark-hud-panel'
+const VIEWER = 'spark-hud-agent'
 const TICK_MS = 220
 const CELEBRATE_MS = 2600
 const PEER_TTL_MS = 10 * 60 * 1000
@@ -191,6 +194,8 @@ async function refreshAgents($: EngineInterface, at: number) {
         tools: old?.tools ?? 0,
         startedAt: old?.startedAt ?? at,
         updatedAt: old?.updatedAt ?? at,
+        ...(old?.ctxTokens !== undefined ? { ctxTokens: old.ctxTokens } : {}),
+        ...(old?.model ? { model: old.model } : {}),
       }
     })
     // Agents seen through their tool calls that the list does not name yet.
@@ -470,14 +475,14 @@ function tips(v: View): string[] {
   return out
 }
 
-function AgentLine(E: Els, a: HudAgent, v: View, i: number) {
-  const { Text } = E
+function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface) {
+  const { Text, Button } = E
   const isRunning = a.status === 'running' || a.status === 'pending'
   const isBad = a.status === 'failed' || a.status === 'killed'
   const icon = isRunning ? SPIN[(v.f + i) % SPIN.length] : a.status === 'completed' ? '✔' : isBad ? '✘' : '◦'
   const tint = v.t.stops[i % v.t.stops.length] ?? v.t.text
   return (
-    <Text wrap="truncate-end">
+    <Button key={`agent-${a.id}`} plain onPress={() => void openViewer($, a.id)}>
       <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : MUTED}> {icon} </Text>
       <Text bold color={tint}>
         {a.name || a.type}
@@ -488,7 +493,8 @@ function AgentLine(E: Els, a: HudAgent, v: View, i: number) {
         {'  '}
         {a.tools}⚒{isRunning ? ` ${fmtDur(v.at - a.startedAt)}` : ''}
       </Text>
-    </Text>
+      <Text color={v.t.stops[1]}> ⤢</Text>
+    </Button>
   )
 }
 
@@ -707,7 +713,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
 
       {Header(E, 'AGENTS', v, `${running.length} active / ${v.ag.length}`)}
       {v.ag.length === 0 ? <Text color={MUTED}>  None in this session.</Text> : null}
-      {shownAgents.map((a, i) => AgentLine(E, a, v, i))}
+      {shownAgents.map((a, i) => AgentLine(E, a, v, i, $))}
       {v.ag.length > shownAgents.length ? <Text color={MUTED}>  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
 
       {Header(E, 'OTHER WINDOWS', v, `${v.pe.length}`)}
@@ -722,6 +728,130 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
         </Text>
       ))}
       {Rule(E, cols, v, `theme ${v.t.name} · rotates every 15 min`, '')}
+    </Box>
+  )
+}
+
+// ── Agent viewer ─────────────────────────────────────────────────────────
+
+function firstLine(text: string, max = 90): string {
+  const line = text.split(/\r?\n/).find(l => l.trim() !== '') ?? ''
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+async function refreshViewer($: EngineInterface, agentId: string) {
+  const messages = await $.session.messages({ agentId })
+  if (!Array.isArray(messages)) return
+  const rows: HudViewRow[] = []
+  for (const m of messages) {
+    if (m.role === 'user') {
+      if (m.text.trim() && rows.length === 0) rows.push({ kind: 'task', text: m.text.trim() })
+      continue
+    }
+    if (m.text.trim()) rows.push({ kind: 'text', text: m.text.trim() })
+    for (const use of m.toolUses) {
+      const lines = use.text === undefined ? 0 : use.text.split(/\r?\n/).length
+      rows.push({
+        kind: 'tool',
+        text: describeTool(use.tool, use.input),
+        ...(use.text === undefined
+          ? { isPending: true }
+          : { detail: use.isError ? firstLine(use.text) : `${firstLine(use.text, 70)}${lines > 1 ? `  (+${lines - 1} lines)` : ''}` }),
+        ...(use.isError ? { isError: true } : {}),
+      })
+    }
+  }
+  await update($, viewerRows, () => rows.slice(-300))
+}
+
+async function openViewer($: EngineInterface, agentId: string) {
+  await update($, viewerAgent, () => agentId)
+  await update($, viewerRows, () => [])
+  const list = await read($, agents)
+  const a = list.find(x => x.id === agentId)
+  await $.ui.open({ id: VIEWER, title: `Agent · ${a ? a.name || a.type : agentId}`, focus: true, closeOnEscape: true, rows: 22 })
+  await refreshViewer($, agentId).catch(() => undefined)
+}
+
+function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineInterface, agentId: string | null, rows: HudViewRow[]) {
+  const { Box, Text, Button } = E
+  const a = v.ag.find(x => x.id === agentId)
+  if (!a) {
+    return (
+      <Box flexDirection="column">
+        {Rule(E, cols, v, 'AGENT VIEWER', v.t.name)}
+        <Text color={MUTED}>  Pick an agent: click one in the HUD (▾ more) or in ◫ panel.</Text>
+        {v.ag.map((x, i) => AgentLine(E, x, v, i, $))}
+      </Box>
+    )
+  }
+  const isRunning = a.status === 'running' || a.status === 'pending'
+  const idx = v.ag.findIndex(x => x.id === a.id)
+  const prev = v.ag[(idx - 1 + v.ag.length) % v.ag.length]
+  const nextA = v.ag[(idx + 1) % v.ag.length]
+  const ctxPct = a.ctxTokens !== undefined && v.u?.ctxWindow ? Math.round((a.ctxTokens / v.u.ctxWindow) * 100) : undefined
+  const task = rows.find(r => r.kind === 'task')
+  const body = rows.filter(r => r.kind !== 'task')
+  const room = Math.max(4, rowsAvail - 7)
+  const shown = body.slice(-room)
+  const tint = v.t.stops[idx % v.t.stops.length] ?? v.t.text
+
+  return (
+    <Box flexDirection="column">
+      {Rule(E, cols, v, `AGENT · ${a.name || a.type}`, a.status)}
+      <Box flexDirection="row" justifyContent="space-between">
+        <Text wrap="truncate-end">
+          <Text color={isRunning ? tint : a.status === 'completed' ? OK : MUTED} bold>
+            {isRunning ? SPIN[v.f % SPIN.length] : a.status === 'completed' ? '✔' : '◦'}{' '}
+          </Text>
+          <Text bold color={tint}>{a.type}</Text>
+          <Text color={MUTED}> · {a.description}</Text>
+        </Text>
+        <Box flexDirection="row" gap={2}>
+          {v.ag.length > 1 && prev ? <Button key="prev" plain label="◀" onPress={() => void openViewer($, prev.id)} /> : null}
+          {v.ag.length > 1 && nextA ? <Button key="next" plain label="▶" onPress={() => void openViewer($, nextA.id)} /> : null}
+          <Button key="close" plain role="dismiss" label="✕" onPress={() => void $.ui.close({ id: VIEWER })} />
+        </Box>
+      </Box>
+      <Text wrap="truncate-end">
+        {Chip(E, `⚒ ${a.tools}`, v)}
+        <Text> </Text>
+        {Chip(E, `⏱ ${fmtDur((isRunning ? v.at : a.updatedAt) - a.startedAt)}`, v)}
+        <Text> </Text>
+        {Chip(E, `ctx ${fmtTokens(a.ctxTokens)}${ctxPct !== undefined ? ` · ${ctxPct}%` : ''}`, v, ctxPct === undefined ? v.t.text : statusColor(ctxPct))}
+        {a.model ? (
+          <Text>
+            <Text> </Text>
+            {Chip(E, a.model.replace(/^claude-/, ''), v)}
+          </Text>
+        ) : null}
+      </Text>
+      {task ? (
+        <Text wrap="truncate-end">
+          <Text color={v.t.stops[1]} bold>{'  task '}</Text>
+          <Text color={v.t.text}>{firstLine(task.text, 400)}</Text>
+        </Text>
+      ) : null}
+      {body.length > shown.length ? <Text color={MUTED}>  … {body.length - shown.length} earlier steps</Text> : null}
+      {shown.length === 0 ? <Text color={MUTED}>  {isRunning ? 'Waiting for the first step…' : 'No transcript available for this agent.'}</Text> : null}
+      {shown.map((r, i) =>
+        r.kind === 'text' ? (
+          <Text wrap="truncate-end">
+            <Text color={tint}>{'  ✻ '}</Text>
+            <Text color={v.t.text}>{firstLine(r.text, 400)}</Text>
+          </Text>
+        ) : (
+          <Text wrap="truncate-end">
+            <Text color={r.isError ? HOT : r.isPending ? tint : OK}>
+              {'  '}
+              {r.isPending ? SPIN[(v.f + i) % SPIN.length] : r.isError ? '✘' : '⚒'}{' '}
+            </Text>
+            <Text color={v.t.text} bold>{r.text}</Text>
+            {r.detail ? <Text color={r.isError ? HOT : MUTED}>  {r.detail}</Text> : null}
+          </Text>
+        ),
+      )}
+      {Rule(E, cols, v, isRunning ? 'live · updates every second' : 'finished', '')}
     </Box>
   )
 }
@@ -750,6 +880,7 @@ export const register: Register = on => {
 
     await $.command.register({ name: 'hud', description: 'Spark HUD: expand / collapse the HUD above the prompt' })
     await $.command.register({ name: 'hud-theme', description: 'Spark HUD: switch to the next color theme' })
+    await $.command.register({ name: 'hud-agents', description: 'Spark HUD: open the agent viewer (live transcript of a subagent)' })
     await $.command.register({ name: 'hud-panel', description: 'Spark HUD: open the side panel with agents and windows' })
 
     ticker?.cancel()
@@ -768,6 +899,13 @@ export const register: Register = on => {
         const theme = themeIndex(at, await read($, themeShift))
         if (lastTheme !== -1 && theme !== lastTheme) $.ui.toast(`🎨 Spark HUD · theme ${THEMES[theme]?.name ?? ''}`)
         lastTheme = theme
+        // every ~1s: the agent viewer, while its agent runs
+        const watching = await read($, viewerAgent)
+        if (watching && ticks % 4 === 0) {
+          const target = ag.find(a => a.id === watching)
+          if (!target || target.status === 'running' || target.status === 'pending' || ticks % 20 === 0)
+            await refreshViewer($, watching).catch(() => undefined)
+        }
         // every ~1s while something runs: agents
         if ((s.working || hasRunning) && ticks % 5 === 0) await refreshAgents($, at).catch(() => undefined)
         // every ~5s: heartbeat for other windows, and read theirs
@@ -804,6 +942,17 @@ export const register: Register = on => {
     return { text: `Theme: ${THEMES[themeIndex(at, await read($, themeShift))]?.name ?? ''}` }
   })
 
+  on('command.run', { command: 'hud-agents' }, async $ => {
+    const list = await read($, agents)
+    const pick = list.find(a => a.status === 'running') ?? list[list.length - 1]
+    if (!pick) {
+      await $.ui.open({ id: VIEWER, title: 'Agent viewer', focus: true, closeOnEscape: true, rows: 10 })
+      return { text: 'No agents yet in this session.' }
+    }
+    await openViewer($, pick.id)
+    return { text: `Viewing agent ${pick.name || pick.type}.` }
+  })
+
   on('command.run', { command: 'hud-panel' }, async $ => {
     const opened = await $.ui.open({ id: PANE, title: 'Spark HUD · agents' })
     return { text: opened.isPlaced ? 'Spark HUD panel opened.' : 'Panel ready: it shows once the terminal is wider (or in fullscreen mode).' }
@@ -833,6 +982,17 @@ export const register: Register = on => {
     if (e.tool === 'Agent') await refreshAgents($, await $.clock.now()).catch(() => undefined)
     return result
   }).catch(($, e, next) => next(e))
+
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    const id = e.agentId
+    const u = result.usage
+    if (id && u) {
+      const ctx = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+      await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens: ctx, model: u.model } : a)))
+    }
+    return result
+  })
 
   on('turn.complete', async ($, e, next) => {
     const at = await $.clock.now()
@@ -887,6 +1047,13 @@ export const register: Register = on => {
     return (await read($, isExpanded)) ? expandedView(E, v, cols, $, onToggle) : compactCard(E, v, cols, onToggle)
   })
 
+  on('ui.render', { component: 'Pane', requestId: VIEWER }, async ($, e) => {
+    const E = $.ui.resolve(e)
+    const v = await view($)
+    const [id, rows] = await Promise.all([read($, viewerAgent), read($, viewerRows)])
+    return ViewerBody(E, v, e.props.bodyColumns, e.viewport?.rows ?? 24, $, id, rows)
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const E = $.ui.resolve(e)
     const { Box, Text } = E
@@ -899,7 +1066,7 @@ export const register: Register = on => {
           Agents in this session <Text dimColor>({v.ag.length})</Text>
         </Text>
         {v.ag.length === 0 ? <Text dimColor>  None yet.</Text> : null}
-        {v.ag.map((a, i) => AgentLine(E, a, v, i))}
+        {v.ag.map((a, i) => AgentLine(E, a, v, i, $))}
         <Text bold color="claude">
           Other windows <Text dimColor>({v.pe.length})</Text>
         </Text>

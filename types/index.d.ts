@@ -29,6 +29,16 @@ export type HudAgent = {
   tools: number
   startedAt: number
   updatedAt: number
+  ctxTokens?: number
+  model?: string
+}
+
+export type HudViewRow = {
+  kind: 'task' | 'text' | 'tool'
+  text: string
+  detail?: string
+  isError?: boolean
+  isPending?: boolean
 }
 
 export type HudPeer = {
@@ -73,6 +83,8 @@ declare module 'claude-code' {
       peers: HudPeer[]
       stats: HudStats
       themeShift: number
+      viewerAgent: string | null
+      viewerRows: HudViewRow[]
     }
   }
 }
