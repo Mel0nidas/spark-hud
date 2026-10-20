@@ -5,7 +5,7 @@ Mod de Claude Code: un HUD animado sobre el prompt con la context window, los l√
 ## Instalar
 
 ```
-/plugin install spark-hud --marketplace agusneocube/spark-hud
+/plugin install spark-hud --marketplace Mel0nidas/spark-hud
 ```
 
 ## Comandos
