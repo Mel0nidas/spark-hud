@@ -41,6 +41,19 @@ test('the band shows context, 5h limit and cost, and expands', async ($, on) => 
     expect(await ui.find({ key: "theme" })).toBeDefined()
     expect(await ui.find({ text: /autocompact|No reading|pace|↻/ })).toBeDefined()
 
+    // the theme stays put over time and changes only on a press
+    const before = (await ui.findAll({ text: /theme Claude/ })).length
+    await ui.advance(20 * 60 * 1000)
+    expect((await ui.findAll({ text: /theme Claude/ })).length).toBe(before)
+    await ui.press({ key: 'theme' })
+    expect(await ui.find({ text: /theme Black & Red/ })).toBeDefined()
+    await ui.press({ key: 'theme' })
+    await ui.press({ key: 'theme' })
+    await ui.press({ key: 'theme' })
+    await ui.press({ key: 'theme' })
+    await ui.press({ key: 'theme' })
+    await ui.press({ key: 'theme' })
+
     await ui.press({ key: 'toggle' })
     expect(await ui.find({ key: "theme" })).toBeUndefined()
     await ui.unmount()

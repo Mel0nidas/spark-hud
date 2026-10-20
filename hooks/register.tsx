@@ -28,7 +28,7 @@ const usage = atom({ plugin: 'spark-hud', key: 'usage' } as const, null)
 const breakdown = atom({ plugin: 'spark-hud', key: 'breakdown' } as const, null)
 const agents = atom({ plugin: 'spark-hud', key: 'agents' } as const, [])
 const peers = atom({ plugin: 'spark-hud', key: 'peers' } as const, [])
-const themeShift = atom({ plugin: 'spark-hud', key: 'themeShift' } as const, 0)
+const themeIdx = atom({ plugin: 'spark-hud', key: 'theme' } as const, 0)
 const viewerAgent = atom({ plugin: 'spark-hud', key: 'viewerAgent' } as const, null)
 const viewerRows = atom({ plugin: 'spark-hud', key: 'viewerRows' } as const, [])
 const stats = atom({ plugin: 'spark-hud', key: 'stats' } as const, INITIAL_STATS)
@@ -39,22 +39,43 @@ const TICK_MS = 220
 const CELEBRATE_MS = 2600
 const PEER_TTL_MS = 10 * 60 * 1000
 
-// ── Logo animation ───────────────────────────────────────────────────
+// ── Avatar (Claude's mascot) ───────────────────────────────────────
 
-const SPARKS = ['✻', '✼', '✽', '✾', '✽', '✼']
-const DANCE = ['┗(*)┓', '┏(*)┛', '┗(*)┛', '┏(*)┓']
-const PARTY = ['\\(*)/', '─(*)─', '\\(*)/', '/(*)\\']
-const NOTES = ['♪', '♫', ' ', '♫']
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+const AVATAR_W = 11
+const AVATAR_GAP = 3
+const HEAD = ' ▐▛███▜▌ '
+const HEAD_BLINK = ' ▐█████▌ '
+const ARMS = '▝▜█████▛▘'
+const ARMS_LOW = '▗▟█████▙▖'
+const LEGS = '  ▘▘ ▝▝  '
+const LEGS_STEP = '  ▝▘ ▘▝  '
+const NOTES = ['  ♪     ♫  ', '    ♫    ♪ ', ' ♫    ♪    ', '   ♪     ♫ ']
+const CONFETTI = ['✦  ✧   ✦  ', ' ✧   ✦  ✧ ', '  ✦  ✧   ✦', '✧   ✦  ✧  ']
 
 type Mood = 'idle' | 'dance' | 'party' | 'sweat'
 
-function logo(f: number, mood: Mood): string {
-  const spark = SPARKS[f % SPARKS.length] ?? '✻'
-  if (mood === 'dance') return `${NOTES[f % 4]}${(DANCE[Math.floor(f / 2) % 4] ?? '').replace('*', spark)}`
-  if (mood === 'party') return `✦${(PARTY[f % 4] ?? '').replace('*', spark)}`
-  if (mood === 'sweat') return ` (✻;) `
-  return '  (✻) '
+type AvatarFrame = { top: string; head: string; arms: string; legs: string; shift: number; drop: boolean }
+
+function avatarFrame(f: number, mood: Mood): AvatarFrame {
+  if (mood === 'dance') {
+    const beat = Math.floor(f / 2) % 4
+    return {
+      top: NOTES[beat] ?? '',
+      head: HEAD,
+      arms: f % 2 === 0 ? ARMS : ARMS_LOW,
+      legs: f % 2 === 0 ? LEGS : LEGS_STEP,
+      shift: [1, 0, 1, 2][beat] ?? 1,
+      drop: false,
+    }
+  }
+  if (mood === 'party') {
+    return { top: CONFETTI[f % 4] ?? '', head: f % 4 === 3 ? HEAD_BLINK : HEAD, arms: f % 2 === 0 ? ARMS : ARMS_LOW, legs: LEGS, shift: 1, drop: false }
+  }
+  if (mood === 'sweat') return { top: '', head: HEAD, arms: ARMS_LOW, legs: LEGS, shift: 1, drop: true }
+  // at rest: still, with a blink now and then and a slow twinkle above
+  const twinkle = f % 9 < 3 ? `${' '.repeat(8)}${['✧', '✦', '·'][f % 3]}  ` : ''
+  return { top: twinkle, head: f % 7 === 6 ? HEAD_BLINK : HEAD, arms: ARMS, legs: LEGS, shift: 1, drop: false }
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────
@@ -257,12 +278,13 @@ async function refreshPeers($: EngineInterface, myId: string, at: number) {
   await update($, peers, () => found)
 }
 
-// ── Palettes (rotate every 15 minutes, in sync across windows) ──────────
+// ── Palettes (fixed until you change them; kept between sessions) ─────
 
 type Theme = { name: string; stops: string[]; chip: string; text: string }
 
 // Calm pairings: a dark neutral plus one accent color, in three shades.
 const THEMES: Theme[] = [
+  { name: 'Claude', stops: ['#A8553A', '#D97757', '#EBA285'], chip: '#1F1B19', text: '#EDE6E1' },
   { name: 'Black & Red', stops: ['#7F1D1D', '#B91C1C', '#E05252'], chip: '#1C1C1C', text: '#E7E5E4' },
   { name: 'Graphite & Amber', stops: ['#78350F', '#B45309', '#D9A441'], chip: '#1F1D1A', text: '#E7E5E4' },
   { name: 'Slate & Blue', stops: ['#1E3A5F', '#2F5D8A', '#6C9BC8'], chip: '#1A1F26', text: '#E2E8F0' },
@@ -271,15 +293,21 @@ const THEMES: Theme[] = [
   { name: 'Wine', stops: ['#4C0519', '#881337', '#C2546F'], chip: '#1F1A1C', text: '#F1E7EA' },
 ]
 
-const THEME_MS = 15 * 60 * 1000
 const OK = '#6BAA75'
 const WARN = '#D9A441'
 const HOT = '#D9534F'
 const TRACK = '#2E2E2E'
 const MUTED = '#8A8580'
 
-function themeIndex(at: number, shift: number): number {
-  return (((Math.floor(at / THEME_MS) + shift) % THEMES.length) + THEMES.length) % THEMES.length
+function themeOf(i: number): Theme {
+  return THEMES[((i % THEMES.length) + THEMES.length) % THEMES.length] ?? THEMES[0]!
+}
+
+/** The next theme, remembered in the store so new sessions start with it. */
+async function nextTheme($: EngineInterface): Promise<Theme> {
+  const i = await update($, themeIdx, n => (((n + 1) % THEMES.length) + THEMES.length) % THEMES.length)
+  await $.store.set('theme', i).catch(() => undefined)
+  return themeOf(i)
 }
 
 function hex(c: string): [number, number, number] {
@@ -322,7 +350,7 @@ type View = {
 }
 
 async function view($: EngineInterface): Promise<View> {
-  const [f, at, u, b, s, ag, pe, shift] = await Promise.all([
+  const [f, at, u, b, s, ag, pe, ti] = await Promise.all([
     read($, frame),
     read($, now),
     read($, usage),
@@ -330,9 +358,9 @@ async function view($: EngineInterface): Promise<View> {
     read($, stats),
     read($, agents),
     read($, peers),
-    read($, themeShift),
+    read($, themeIdx),
   ])
-  return { f, at, u, b, s, ag, pe, t: THEMES[themeIndex(at, shift)] ?? THEMES[0]! }
+  return { f, at, u, b, s, ag, pe, t: themeOf(ti) }
 }
 
 function moodOf(v: View): Mood {
@@ -343,7 +371,6 @@ function moodOf(v: View): Mood {
 }
 
 const PARTIAL = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
-const TWINKLE = ['✦', '✧', '⋆', '·', ' ', '·', '⋆', '✧']
 
 /** Text with a gradient that shifts with the frame. */
 function Grad(E: Els, text: string, v: View) {
@@ -410,30 +437,45 @@ function Gauge(E: Els, label: string, pct: number, width: number, v: View, suffi
   )
 }
 
-function Logo(E: Els, v: View) {
-  const { Text } = E
+/** Claude's mascot, four lines tall, tinted by the theme. */
+function Avatar(E: Els, v: View) {
+  const { Box, Text } = E
   const mood = moodOf(v)
-  const chars = [...logo(v.f, mood)]
-  const sparkle = [0, 1, 2].map(i => TWINKLE[(v.f + i * 3) % TWINKLE.length] ?? ' ')
+  const a = avatarFrame(v.f, mood)
+  const body = (line: string, color: string, extra = '') => {
+    const pad = ' '.repeat(a.shift)
+    const right = ' '.repeat(Math.max(0, AVATAR_W - a.shift - [...line].length - [...extra].length))
+    return (
+      <Text>
+        <Text>{pad}</Text>
+        <Text color={color}>{line}</Text>
+        {extra ? <Text color="#6C9BC8">{extra}</Text> : null}
+        <Text>{right}</Text>
+      </Text>
+    )
+  }
+  const glow = mood === 'dance' || mood === 'party' ? lerp(v.t.stops, 0.4 + 0.3 * wave(v.f, 7, 0)) : v.t.stops[1]!
   return (
-    <Text bold>
-      {chars.map((ch, i) => (
-        <Text
-          color={
-            mood === 'sweat'
-              ? HOT
-              : SPARKS.includes(ch)
-                ? lerp(v.t.stops, wave(v.f, 11, 0))
-                : lerp(v.t.stops, i / Math.max(1, chars.length - 1))
-          }
-        >
-          {ch}
-        </Text>
-      ))}
-      {sparkle.map((ch, i) => (
-        <Text color={v.t.stops[(i + v.f) % v.t.stops.length]}>{ch}</Text>
-      ))}
-    </Text>
+    <Box flexDirection="column" width={AVATAR_W} flexShrink={0}>
+      <Text color={v.t.stops[2]}>{a.top.padEnd(AVATAR_W, ' ')}</Text>
+      {body(a.head, glow, a.drop ? ';' : '')}
+      {body(a.arms, glow)}
+      {body(a.legs, v.t.stops[0]!)}
+    </Box>
+  )
+}
+
+/** Puts the avatar to the right of a block, when there is room for both. */
+function withAvatar(E: Els, v: View, cols: number, draw: (w: number) => unknown) {
+  const { Box } = E
+  if (cols < 60) return draw(cols)
+  return (
+    <Box flexDirection="row" gap={AVATAR_GAP}>
+      <Box flexDirection="column" flexGrow={1}>
+        {draw(cols - AVATAR_W - AVATAR_GAP)}
+      </Box>
+      {Avatar(E, v)}
+    </Box>
   )
 }
 
@@ -528,6 +570,10 @@ function Header(E: Els, text: string, v: View, count?: string) {
 }
 
 function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
+  return withAvatar(E, v, cols, w => compactBody(E, v, w, onToggle))
+}
+
+function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
   const { Box, Text, Button } = E
   const barW = cols >= 130 ? 12 : cols >= 100 ? 9 : cols >= 80 ? 6 : 4
   const ctxPct = v.u?.ctxPercent ?? 0
@@ -542,9 +588,8 @@ function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
     <Box flexDirection="column">
       {Rule(E, cols, v, 'SPARK HUD', v.t.name)}
       <Box flexDirection="row" gap={2}>
-        {Logo(E, v)}
-        {Gauge(E, 'CTX', ctxPct, barW, v, v.u?.ctxTokens !== undefined && cols >= 100 ? ` ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : '')}
-        {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveReset !== undefined && cols >= 110 ? ` ↻${fmtDur(fiveReset)}` : '') : null}
+        {Gauge(E, 'CTX', ctxPct, barW, v, v.u?.ctxTokens !== undefined && cols >= 100 ? `  ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : '')}
+        {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveReset !== undefined && cols >= 110 ? `  ↻ ${fmtDur(fiveReset)}` : '') : null}
         {week && cols >= 85 ? Gauge(E, '7D', week.percentUsed, Math.max(3, barW - 3), v) : null}
       </Box>
       <Box flexDirection="row" gap={2}>
@@ -604,42 +649,41 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
 
   return (
     <Box flexDirection="column">
-      {Rule(E, cols, v, 'SPARK HUD', v.t.name)}
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text>
-          {Logo(E, v)}
-          <Text color={v.t.text}>
-            {'  '}
-            {v.u?.model ?? '…'}
+      {withAvatar(E, v, cols, w => (
+        <Box flexDirection="column">
+          {Rule(E, w, v, 'SPARK HUD', v.t.name)}
+          <Box flexDirection="row" justifyContent="space-between">
+            <Text wrap="truncate-end">
+              <Text color={v.t.text}>{v.u?.model ?? '…'}</Text>
+              <Text color={MUTED}>
+                {' '}
+                · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
+              </Text>
+            </Text>
+            <Box flexDirection="row" gap={2}>
+              <Button key="theme" plain label="🎨 theme" onPress={() => void nextTheme($)} />
+              <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agents' })} />
+              <Button key="toggle" plain label="▴ less" onPress={onToggle} />
+            </Box>
+          </Box>
+          {Header(E, 'CONTEXT WINDOW', v)}
+          <Text wrap="truncate-end">
+            <Text>{'  '}</Text>
+            {GradBar(E, ctxPct, Math.max(8, Math.min(bigW, w - 48)), v, v.s.working)}
+            <Text bold color={statusColor(ctxPct)}>
+              {' '}
+              {ctxPct}%
+            </Text>
+            <Text color={v.t.text}>
+              {'  '}
+              {fmtTokens(v.u?.ctxTokens)} / {fmtTokens(v.u?.ctxWindow)}
+            </Text>
+            <Text color={MUTED}>
+              {v.b?.autoCompactAt ? `  · autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? '  · autocompact OFF' : ''}
+            </Text>
           </Text>
-          <Text color={MUTED}>
-            {' '}
-            · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
-          </Text>
-        </Text>
-        <Box flexDirection="row" gap={2}>
-          <Button key="theme" plain label="🎨 theme" onPress={() => void update($, themeShift, n => n + 1)} />
-          <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agents' })} />
-          <Button key="toggle" plain label="▴ less" onPress={onToggle} />
         </Box>
-      </Box>
-
-      {Header(E, 'CONTEXT WINDOW', v)}
-      <Text>
-        <Text>{'  '}</Text>
-        {GradBar(E, ctxPct, bigW, v, v.s.working)}
-        <Text bold color={statusColor(ctxPct)}>
-          {' '}
-          {ctxPct}%
-        </Text>
-        <Text color={v.t.text}>
-          {'  '}
-          {fmtTokens(v.u?.ctxTokens)} / {fmtTokens(v.u?.ctxWindow)}
-        </Text>
-        <Text color={MUTED}>
-          {v.b?.autoCompactAt ? `  · autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? '  · autocompact OFF' : ''}
-        </Text>
-      </Text>
+      ))}
       {used.slice(0, 6).map((c, i) => {
         const w = 14
         const n = Math.max(1, Math.round((c.tokens / catMax) * w))
@@ -694,13 +738,13 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
       <Text wrap="truncate-end">
         <Text>{'  '}</Text>
         {Chip(E, `$ ${fmtUsd(v.u?.costUsd).replace('$', '')}`, v)}
-        <Text> </Text>
+        <Text>{'  '}</Text>
         {Chip(E, `⚒ ${v.s.toolCalls}`, v)}
-        <Text> </Text>
+        <Text>{'  '}</Text>
         {Chip(E, `⏱ ${v.s.lastTurnMs !== undefined ? `${fmtDur(v.s.lastTurnMs)}/${v.s.lastTurnTools}⚒` : '—'}`, v)}
-        <Text> </Text>
+        <Text>{'  '}</Text>
         {Chip(E, `cache ${cacheHit === undefined ? '—' : `${cacheHit}%`}`, v, cacheHit === undefined ? v.t.text : statusColor(100 - cacheHit))}
-        <Text> </Text>
+        <Text>{'  '}</Text>
         {Chip(E, `out ${fmtTokens(v.s.output)}`, v)}
       </Text>
       {v.s.working && v.s.lastAction ? (
@@ -727,7 +771,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
           {t}
         </Text>
       ))}
-      {Rule(E, cols, v, `theme ${v.t.name} · rotates every 15 min`, '')}
+      {Rule(E, cols, v, `theme ${v.t.name} · 🎨 theme to change`, '')}
     </Box>
   )
 }
@@ -866,7 +910,6 @@ async function toggle($: EngineInterface, columns?: number) {
 export const register: Register = on => {
   let myId = ''
   let ticks = 0
-  let lastTheme = -1
   let ticker: { cancel: () => void } | undefined
 
   on('session.start', async ($, e, next) => {
@@ -875,6 +918,8 @@ export const register: Register = on => {
     const u = await $.session.usage()
     const at = await $.clock.now()
     await update($, stats, s => ({ ...s, startedAt: u.startedAt }))
+    const saved = await $.store.get('theme').catch(() => undefined)
+    if (typeof saved === 'number') await update($, themeIdx, () => saved)
     await update($, now, () => at)
     await refreshUsage($).catch(() => undefined)
 
@@ -896,9 +941,6 @@ export const register: Register = on => {
           await update($, frame, f => (f + 1) % 10_000)
           await update($, now, () => at)
         }
-        const theme = themeIndex(at, await read($, themeShift))
-        if (lastTheme !== -1 && theme !== lastTheme) $.ui.toast(`🎨 Spark HUD · theme ${THEMES[theme]?.name ?? ''}`)
-        lastTheme = theme
         // every ~1s: the agent viewer, while its agent runs
         const watching = await read($, viewerAgent)
         if (watching && ticks % 4 === 0) {
@@ -937,9 +979,8 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'hud-theme' }, async $ => {
-    await update($, themeShift, n => n + 1)
-    const at = await $.clock.now()
-    return { text: `Theme: ${THEMES[themeIndex(at, await read($, themeShift))]?.name ?? ''}` }
+    const t = await nextTheme($)
+    return { text: `Theme: ${t.name}` }
   })
 
   on('command.run', { command: 'hud-agents' }, async $ => {

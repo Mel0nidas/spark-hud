@@ -68,7 +68,7 @@ It is built for people who run long sessions on a **Max subscription** and work 
 
 ## Themes
 
-Six calm palettes: a dark neutral plus one accent color. They **rotate every 15 minutes**, in sync across all your windows. Press `🎨 theme` or run `/hud-theme` to switch to the next one.
+Seven calm palettes: a dark neutral plus one accent color, starting with **Claude** orange. The theme **only changes when you ask**: press `🎨 theme` or run `/hud-theme` to switch to the next one, and your pick is remembered for new sessions.
 
 <img src="assets/themes.svg" alt="The six themes: Black & Red, Graphite & Amber, Slate & Blue, Forest, Ink & Bone, Wine" width="100%">
 
@@ -137,7 +137,6 @@ To hot-reload while you edit, run `claude --plugin-dir ./spark-hud`. Saving a fi
 
 ## Roadmap
 
-- [ ] Pin a favorite theme instead of rotating
 - [ ] Sparkline of context growth per turn
 - [ ] Click a window in the list to bring it to the front
 

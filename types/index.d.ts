@@ -82,7 +82,7 @@ declare module 'claude-code' {
       agents: HudAgent[]
       peers: HudPeer[]
       stats: HudStats
-      themeShift: number
+      theme: number
       viewerAgent: string | null
       viewerRows: HudViewRow[]
     }

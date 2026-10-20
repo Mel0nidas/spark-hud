@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- **Claude's mascot** replaces the spark logo: an animated avatar on the right side of the HUD (blinks at rest, dances while Claude works, celebrates when a turn ends, sweats when the context is nearly full), tinted by the theme.
+- New default theme **Claude** (orange).
+- Themes no longer rotate on a timer: they change only when you press `🎨 theme` or run `/hud-theme`, and the pick is kept between sessions.
+- More breathing room between gauges, their readings and the session chips.
+
 ## 0.3.0
 
 - **Agent viewer**: click any agent (or run `/hud-agents`) to open a live panel with its task, messages and every tool call with its result.
