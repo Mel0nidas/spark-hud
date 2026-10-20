@@ -1,0 +1,5 @@
+{
+  "name": "agus-mods",
+  "owner": { "name": "agusneocube" },
+  "plugins": [{ "name": "spark-hud", "source": "./" }]
+}

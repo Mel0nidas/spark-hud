@@ -1,0 +1,7 @@
+{
+  "name": "spark-hud",
+  "version": "0.1.0",
+  "author": { "name": "agusneocube" },
+  "description": "HUD animado sobre el prompt: context window, límites del plan Max (5h/7d) con ritmo de consumo, costo, agentes en vivo y otras ventanas de Claude Code.",
+  "types": "./types/index.d.ts"
+}
