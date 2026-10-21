@@ -77,6 +77,7 @@ declare module 'claude-code' {
       frame: number
       now: number
       isExpanded: boolean
+      isUltra: boolean
       usage: HudUsage | null
       breakdown: HudBreakdown | null
       agents: HudAgent[]

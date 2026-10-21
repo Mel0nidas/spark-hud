@@ -15,7 +15,7 @@
 
 ---
 
-Claude Code tells you a lot, but only when you ask: `/context` for the window, `/cost` for the bill, a warning when you are already close to the limit. **Spark HUD keeps all of it on screen, live**, in two compact lines that stay out of your way. Click one button and it opens into a full dashboard.
+Claude Code tells you a lot, but only when you ask: `/context` for the window, `/cost` for the bill, a warning when you are already close to the limit. **Spark HUD keeps all of it on screen, live**, on a single line in the status line under the prompt that stays out of your way. `/hud` opens it into the card above the prompt, and from there into a full dashboard.
 
 It is built for people who run long sessions on a **Max subscription** and work with **many agents and windows at once**.
 
@@ -98,13 +98,29 @@ Claude Code reads a folder marketplace straight from disk. After you edit the fi
 
 | Command / control | What it does |
 |---|---|
-| `▾ more` / `▴ less` or `/hud` | Expand or collapse the dashboard |
+| `/hud` | Cycle one line (the default) → card → full dashboard |
+| `▾ more` / `▴ less` | Expand or collapse the dashboard |
+| `▿ line` | Back to the one line in the status line |
 | Click an agent or `/hud-agents` | Open the agent viewer with its live transcript (`◀ ▶` switch, `Esc` closes) |
 | `◫ panel` or `/hud-panel` | Open the side panel with all agents and windows |
 | `🎨 theme` or `/hud-theme` | Switch to the next color theme |
 | `ctrl+x tab` | Focus the HUD to use its buttons from the keyboard |
 
 The layout adapts to the terminal width. On narrow terminals the bars get shorter and the secondary figures are hidden.
+
+## Status line
+
+The default one-line HUD is drawn in Claude Code's status line, which only your `statusLine` setting can fill. Point it at the script in this repository (it replaces any other status line) in `~/.claude/settings.json`:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "node /path/to/spark-hud/scripts/statusline.mjs",
+  "refreshInterval": 1
+}
+```
+
+`refreshInterval` keeps spinners and the current action live while the session is idle. Until the mod has written its line, the script prints context and limits from the status line's own input.
 
 ## How it works
 
@@ -130,7 +146,7 @@ Spark HUD is a **Claude Code mod**: a single TypeScript hooks module that runs i
 
 ```bash
 claude plugin validate .   # manifest + hooks module, as the engine reads them
-claude plugin test .       # runs tests/*.test.ts against the engine
+claude plugin test .       # runs tests/*.test.tsx against the engine
 ```
 
 To hot-reload while you edit, run `claude --plugin-dir ./spark-hud`. Saving a file reloads the mod.

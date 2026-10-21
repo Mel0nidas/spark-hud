@@ -24,9 +24,13 @@ test('clicking an agent opens its live transcript', async ($, on) => {
   }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('turn.complete', () => ({ text: '' }))
+  on('command.run', () => ({ text: '' }))
 
   // a finished subagent turn makes the HUD refresh its agent list
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1', reason: 'answer' })
+
+  // the HUD starts as one line in the status line; /hud opens the card
+  await $.command.run({ command: 'hud', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
 
   const band = await $.ui.mount({
     plugin: 'spark-hud',

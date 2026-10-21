@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- **Ultracompact**, the new default: the whole HUD on one line in Claude Code's status line, under the prompt, with no frame and nothing drawn above the prompt. It fits the line to the terminal by priority (context, then the 5h limit, then the 7d limit, then model, cost, agents, windows, current action and turns, as many as fit) and spends any room left on reset times and bars. The mod writes the line to `~/.claude/spark-hud/line/<session>.ansi` and `scripts/statusline.mjs` prints it; see *Status line* in the README.
+- `/hud` cycles one line → card → full dashboard; `▿ line` in the card or the dashboard goes back to one line.
+
 ## 0.4.0
 
 - **Claude's mascot** replaces the spark logo: an animated avatar on the right side of the HUD (blinks at rest, dances while Claude works, celebrates when a turn ends, sweats when the context is nearly full), tinted by the theme.
