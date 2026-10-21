@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren, RenderElement } from 'claude-code'
 
 import type { HudAgent, HudBreakdown, HudLimit, HudPeer, HudStats, HudUsage, HudViewRow } from '../types'
 
@@ -24,6 +24,8 @@ const INITIAL_STATS: HudStats = {
 const frame = atom({ plugin: 'spark-hud', key: 'frame' } as const, 0)
 const now = atom({ plugin: 'spark-hud', key: 'now' } as const, 0)
 const isExpanded = atom({ plugin: 'spark-hud', key: 'isExpanded' } as const, false)
+// The default: one line in the status line and nothing above the prompt, until /hud.
+const isUltra = atom({ plugin: 'spark-hud', key: 'isUltra' } as const, true)
 const usage = atom({ plugin: 'spark-hud', key: 'usage' } as const, null)
 const breakdown = atom({ plugin: 'spark-hud', key: 'breakdown' } as const, null)
 const agents = atom({ plugin: 'spark-hud', key: 'agents' } as const, [])
@@ -466,7 +468,7 @@ function Avatar(E: Els, v: View) {
 }
 
 /** Puts the avatar to the right of a block, when there is room for both. */
-function withAvatar(E: Els, v: View, cols: number, draw: (w: number) => unknown) {
+function withAvatar(E: Els, v: View, cols: number, draw: (w: number) => RenderElement) {
   const { Box } = E
   if (cols < 60) return draw(cols)
   return (
@@ -569,11 +571,11 @@ function Header(E: Els, text: string, v: View, count?: string) {
   )
 }
 
-function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
-  return withAvatar(E, v, cols, w => compactBody(E, v, w, onToggle))
+function compactCard(E: Els, v: View, cols: number, onToggle: () => void, onLine: () => void) {
+  return withAvatar(E, v, cols, w => compactBody(E, v, w, onToggle, onLine))
 }
 
-function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
+function compactBody(E: Els, v: View, cols: number, onToggle: () => void, onLine: () => void) {
   const { Box, Text, Button } = E
   const barW = cols >= 130 ? 12 : cols >= 100 ? 9 : cols >= 80 ? 6 : 4
   const ctxPct = v.u?.ctxPercent ?? 0
@@ -629,13 +631,14 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
           </Text>
         ) : null}
         <Button key="toggle" plain label="▾ more" onPress={onToggle} />
+        <Button key="ultra-off" plain label="▿ line" onPress={onLine} />
       </Box>
       {Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '')}
     </Box>
   )
 }
 
-function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggle: () => void) {
+function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggle: () => void, onLine: () => void) {
   const { Box, Text, Button } = E
   const bigW = Math.max(10, Math.min(32, cols - 48))
   const ctxPct = v.u?.ctxPercent ?? 0
@@ -664,6 +667,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
               <Button key="theme" plain label="🎨 theme" onPress={() => void nextTheme($)} />
               <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agents' })} />
               <Button key="toggle" plain label="▴ less" onPress={onToggle} />
+              <Button key="ultra-off" plain label="▿ line" onPress={onLine} />
             </Box>
           </Box>
           {Header(E, 'CONTEXT WINDOW', v)}
@@ -774,6 +778,160 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
       {Rule(E, cols, v, `theme ${v.t.name} · 🎨 theme to change`, '')}
     </Box>
   )
+}
+
+// ── Ultracompact line (in the status line) ──────────────────────────────
+
+/** A run of text in one style. */
+type Span = { text: string; color?: string; bg?: string; bold?: boolean }
+
+/** One rendering of a line item, as styled runs. */
+type Variant = Span[]
+
+const cells = (text: string) => [...text].length
+const widthOf = (variant: Variant) => variant.reduce((n, span) => n + cells(span.text), 0)
+
+/**
+ * Picks a rendering per item for a line of `cols` cells. Items go in by priority
+ * (the order given) at their shortest, skipping any that no longer fit; the room
+ * left then upgrades them a step at a time, so every item gets its next detail
+ * before any gets two.
+ */
+function fitLine(items: Variant[][], cols: number, gap: number): Variant[] {
+  const chosen = new Map<number, number>()
+  let used = 0
+  items.forEach((variants, i) => {
+    const need = widthOf(variants[0]!) + (chosen.size > 0 ? gap : 0)
+    // the first item always shows, so the line is never empty
+    if (used + need <= cols || i === 0) {
+      chosen.set(i, 0)
+      used += need
+    }
+  })
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const [i, at] of chosen) {
+      const variants = items[i]!
+      if (at + 1 >= variants.length) continue
+      const extra = widthOf(variants[at + 1]!) - widthOf(variants[at]!)
+      if (used + extra > cols) continue
+      chosen.set(i, at + 1)
+      used += extra
+      grew = true
+    }
+  }
+  return [...chosen.keys()].sort((a, b) => a - b).map(i => items[i]![chosen.get(i)!]!)
+}
+
+/** GradBar's cells as runs, without the glint. */
+function barSpans(pct: number, width: number, v: View): Span[] {
+  const clamped = Math.max(0, Math.min(100, pct))
+  const exact = (clamped / 100) * width
+  const full = Math.floor(exact)
+  const part = PARTIAL[Math.floor((exact - full) * 8)] ?? ''
+  const stops = clamped >= 85 ? [WARN, HOT] : clamped >= 60 ? [v.t.stops[0]!, WARN] : v.t.stops
+  const at = (i: number) => lerp(stops, width <= 1 ? 0 : i / (width - 1))
+  const spans: Span[] = []
+  for (let i = 0; i < full; i += 1) spans.push({ text: '█', color: at(i) })
+  if (part) spans.push({ text: part, color: at(full), bg: TRACK })
+  const rest = width - full - (part ? 1 : 0)
+  if (rest > 0) spans.push({ text: '█'.repeat(rest), color: TRACK })
+  return spans
+}
+
+/** A gauge's renderings, shortest first: `5H 23%`, then the reset time, then a short and a longer bar. */
+function gaugeVariants(label: string, pct: number, v: View, opts: { suffix?: string; resetIn?: number }): Variant[] {
+  const reset = opts.resetIn !== undefined ? ` ↻ ${fmtDur(opts.resetIn)}` : ''
+  const make = (bar: number, tail: string): Variant => [
+    { text: `${label} `, color: v.t.stops[1], bold: true },
+    ...(bar > 0 ? [...barSpans(pct, bar, v), { text: ' ' }] : []),
+    { text: `${Math.round(pct)}%`, color: statusColor(pct), bold: true },
+    ...(tail ? [{ text: tail, color: MUTED }] : []),
+  ]
+  const variants = [make(0, '')]
+  if (reset) variants.push(make(0, reset))
+  variants.push(make(4, reset), make(8, reset))
+  if (opts.suffix) variants.push(make(8, `${reset}${opts.suffix}`))
+  return variants
+}
+
+/** A glyph and a figure, the way the compact card draws them: `⬢ opus-5-5`. */
+function factVariants(glyph: string, glyphColor: string, texts: string[], v: View): Variant[] {
+  return texts.map(text => [
+    { text: `${glyph} `, color: glyphColor, bold: true },
+    { text, color: v.t.text },
+  ])
+}
+
+/**
+ * The whole HUD on one line of `cols` cells: context, then the 5h and 7d
+ * limits, then the compact card's facts in its order, as many as fit.
+ */
+function ultraLine(v: View, cols: number): Variant[] {
+  const ctxPct = v.u?.ctxPercent ?? 0
+  const five = v.u?.limits.find(l => l.kind === 'five_hour')
+  const week = v.u?.limits.find(l => l.kind === 'seven_day')
+  const running = v.ag.filter(a => a.status === 'running' || a.status === 'pending').length
+  const busyPeers = v.pe.filter(p => p.working).length
+  const model = (v.u?.model ?? '…').replace(/^claude-/, '')
+  const action = v.s.working && v.s.lastAction ? v.s.lastAction : ''
+  const cut = (text: string, n: number) => (cells(text) > n ? `${[...text].slice(0, n - 1).join('')}…` : text)
+  const turns = `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`
+
+  const items: Variant[][] = [
+    gaugeVariants('CTX', ctxPct, v, {
+      suffix: v.u?.ctxTokens !== undefined ? `  ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : undefined,
+    }),
+  ]
+  if (five) items.push(gaugeVariants('5H', five.percentUsed, v, { resetIn: pace(five, v.at).resetIn }))
+  if (week) items.push(gaugeVariants('7D', week.percentUsed, v, { resetIn: pace(week, v.at).resetIn }))
+  items.push(factVariants('⬢', v.t.stops[1]!, [model], v))
+  items.push(factVariants('$', v.t.stops[2]!, [fmtUsd(v.u?.costUsd).replace('$', '')], v))
+  items.push(factVariants(running > 0 ? SPIN[v.f % SPIN.length]! : '⚙', running > 0 ? v.t.stops[2]! : MUTED, [`${running}/${v.ag.length} agents`], v))
+  if (v.pe.length > 0) {
+    items.push(factVariants('◫', busyPeers > 0 ? v.t.stops[0]! : MUTED, [`${v.pe.length} win${busyPeers > 0 ? ` · ${busyPeers}▶` : ''}`], v))
+  }
+  if (action) items.push(factVariants('→', MUTED, [...new Set([cut(action, 24), action])], v))
+  items.push([[{ text: turns, color: MUTED }]])
+  return fitLine(items, cols, 2)
+}
+
+function ansiStyle(span: Span): string {
+  const rgb = (c: string) => hex(c).join(';')
+  const codes = [
+    span.bold ? '1' : '',
+    span.color ? `38;2;${rgb(span.color)}` : '',
+    span.bg ? `48;2;${rgb(span.bg)}` : '',
+  ].filter(Boolean)
+  return codes.length > 0 ? `\x1b[${codes.join(';')}m${span.text}\x1b[0m` : span.text
+}
+
+/** The line as terminal text, for the status line command to print. */
+function toAnsi(line: Variant[]): string {
+  return line.map(item => item.map(ansiStyle).join('')).join('  ')
+}
+
+// The terminal's width, as the last render saw it, and the text last written.
+let lineColumns = 120
+let lastLine: string | undefined
+
+/**
+ * Ultracompact lives in the status line: this writes the line for its command
+ * (scripts/statusline.mjs) to print, and an empty one while the card is open.
+ */
+async function writeLine($: EngineInterface, myId: string) {
+  const dir = await lineDir($)
+  if (!dir || !myId) return
+  // the status line is drawn 4 columns narrower than the terminal
+  const text = (await read($, isUltra)) ? toAnsi(ultraLine(await view($), Math.max(20, lineColumns - 4))) : ''
+  if (text === lastLine) return
+  await $.fs.write(`${dir}/${myId}.ansi`, text)
+  lastLine = text
+}
+
+async function lineDir($: EngineInterface): Promise<string | undefined> {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  return home ? `${home.replace(/\\/g, '/')}/.claude/spark-hud/line` : undefined
 }
 
 // ── Agent viewer ─────────────────────────────────────────────────────────
@@ -905,6 +1063,12 @@ async function toggle($: EngineInterface, columns?: number) {
   if (open) await refreshBreakdown($, columns ?? 100).catch(() => undefined)
 }
 
+/** Back to the one line in the status line; the card opens collapsed next time. */
+async function toLine($: EngineInterface) {
+  await update($, isExpanded, () => false)
+  await update($, isUltra, () => true)
+}
+
 // ── Registration ─────────────────────────────────────────────────────────────
 
 export const register: Register = on => {
@@ -923,7 +1087,7 @@ export const register: Register = on => {
     await update($, now, () => at)
     await refreshUsage($).catch(() => undefined)
 
-    await $.command.register({ name: 'hud', description: 'Spark HUD: expand / collapse the HUD above the prompt' })
+    await $.command.register({ name: 'hud', description: 'Spark HUD: cycle one line → card → full dashboard' })
     await $.command.register({ name: 'hud-theme', description: 'Spark HUD: switch to the next color theme' })
     await $.command.register({ name: 'hud-agents', description: 'Spark HUD: open the agent viewer (live transcript of a subagent)' })
     await $.command.register({ name: 'hud-panel', description: 'Spark HUD: open the side panel with agents and windows' })
@@ -950,6 +1114,8 @@ export const register: Register = on => {
         }
         // every ~1s while something runs: agents
         if ((s.working || hasRunning) && ticks % 5 === 0) await refreshAgents($, at).catch(() => undefined)
+        // every ~1s: the status line's text
+        if (ticks % 4 === 0) await writeLine($, myId).catch(() => undefined)
         // every ~5s: heartbeat for other windows, and read theirs
         if (ticks % 23 === 0) {
           await heartbeat($, myId).catch(() => undefined)
@@ -964,6 +1130,7 @@ export const register: Register = on => {
     })
 
     await heartbeat($, myId).catch(() => undefined)
+    await writeLine($, myId).catch(() => undefined)
     return result
   })
 
@@ -974,8 +1141,16 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'hud' }, async $ => {
-    await toggle($)
-    return { text: (await read($, isExpanded)) ? 'Spark HUD expanded.' : 'Spark HUD collapsed.' }
+    if (await read($, isUltra)) {
+      await update($, isUltra, () => false)
+      return { text: 'Spark HUD: card above the prompt.' }
+    }
+    if (!(await read($, isExpanded))) {
+      await toggle($)
+      return { text: 'Spark HUD: full dashboard.' }
+    }
+    await toLine($)
+    return { text: 'Spark HUD: one line in the status line.' }
   })
 
   on('command.run', { command: 'hud-theme' }, async $ => {
@@ -1079,13 +1254,15 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    if (e.viewport) lineColumns = e.viewport.columns
+    if (e.props.hasSurvey || (await read($, isUltra))) return next(e)
     const E = $.ui.resolve(e)
     const v = await view($)
     const cols = e.props.bodyColumns
     const columns = e.viewport?.columns
     const onToggle = () => void toggle($, columns)
-    return (await read($, isExpanded)) ? expandedView(E, v, cols, $, onToggle) : compactCard(E, v, cols, onToggle)
+    const onLine = () => void toLine($)
+    return (await read($, isExpanded)) ? expandedView(E, v, cols, $, onToggle, onLine) : compactCard(E, v, cols, onToggle, onLine)
   })
 
   on('ui.render', { component: 'Pane', requestId: VIEWER }, async ($, e) => {
@@ -1102,7 +1279,7 @@ export const register: Register = on => {
     const cols = e.props.bodyColumns
     return (
       <Box flexDirection="column">
-        {compactCard(E, v, cols, () => void toggle($))}
+        {compactCard(E, v, cols, () => void toggle($), () => void toLine($))}
         <Text bold color="claude">
           Agents in this session <Text dimColor>({v.ag.length})</Text>
         </Text>
