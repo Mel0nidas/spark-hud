@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- Fixed: when a docked pane narrowed the HUD, its rows split into stacked columns (`⬢` over the model, `$` over the cost). Every row is now one line that truncates.
+- Fixed: the expanded view no longer runs past the band in fullscreen; it fits the rows it is given and keeps AGENTS visible first.
+- Fixed: agent rows no longer wrap onto two lines; the tool count, time and `⤢` stay visible and the description is cut instead.
+- Fixed: the engine's own forks (compaction, classifiers) no longer show up as phantom `agent` rows.
+- Agent viewer: dropped the duplicate `✕` (the pane frame has one, and Esc closes it), failed agents show `✘`, and an empty viewer says there are no agents yet.
+
 ## 0.4.0
 
 - **Claude's mascot** replaces the spark logo: an animated avatar on the right side of the HUD (blinks at rest, dances while Claude works, celebrates when a turn ends, sweats when the context is nearly full), tinted by the theme.

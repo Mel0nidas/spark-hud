@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { HudAgent, HudBreakdown, HudLimit, HudPeer, HudStats, HudUsage, HudViewRow } from '../types'
 
@@ -219,10 +219,6 @@ async function refreshAgents($: EngineInterface, at: number) {
         ...(old?.model ? { model: old.model } : {}),
       }
     })
-    // Agents seen through their tool calls that the list does not name yet.
-    for (const a of prev) {
-      if (!rows.some(r => r.id === a.id) && at - a.updatedAt < 60_000) rows.push(a)
-    }
     return rows
   })
 }
@@ -466,7 +462,7 @@ function Avatar(E: Els, v: View) {
 }
 
 /** Puts the avatar to the right of a block, when there is room for both. */
-function withAvatar(E: Els, v: View, cols: number, draw: (w: number) => unknown) {
+function withAvatar(E: Els, v: View, cols: number, draw: (w: number) => RenderElement) {
   const { Box } = E
   if (cols < 60) return draw(cols)
   return (
@@ -517,25 +513,35 @@ function tips(v: View): string[] {
   return out
 }
 
-function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface) {
+/** Cuts a text to `n` cells with an ellipsis; '' when there is no room. */
+function clip(s: string, n: number): string {
+  const chars = [...s]
+  if (chars.length <= n) return s
+  return n <= 1 ? '' : `${chars.slice(0, n - 1).join('')}…`
+}
+
+function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface, cols: number) {
   const { Text, Button } = E
   const isRunning = a.status === 'running' || a.status === 'pending'
   const isBad = a.status === 'failed' || a.status === 'killed'
   const icon = isRunning ? SPIN[(v.f + i) % SPIN.length] : a.status === 'completed' ? '✔' : isBad ? '✘' : '◦'
   const tint = v.t.stops[i % v.t.stops.length] ?? v.t.text
+  const name = a.name || a.type
+  const meta = ` ${a.tools}⚒${isRunning ? ` ${fmtDur(v.at - a.startedAt)}` : ''} ⤢`
+  // A Button's Text children wrap rather than truncate, so the line is cut to the row here.
+  let left = cols - 1 - 3 - [...name].length - [...meta].length
+  const desc = a.description ? clip(` · ${a.description}`, left) : ''
+  left -= [...desc].length
+  const act = a.lastAction ? clip(` → ${a.lastAction}`, left) : ''
   return (
-    <Button key={`agent-${a.id}`} plain onPress={() => void openViewer($, a.id)}>
+    <Button key={`agent-${a.id}`} plain label={`${name} ${a.description}`} onPress={() => void openViewer($, a.id)}>
       <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : MUTED}> {icon} </Text>
       <Text bold color={tint}>
-        {a.name || a.type}
+        {name}
       </Text>
-      <Text color={MUTED}> · {a.description}</Text>
-      {a.lastAction ? <Text color={v.t.text}> → {a.lastAction}</Text> : null}
-      <Text color={MUTED}>
-        {'  '}
-        {a.tools}⚒{isRunning ? ` ${fmtDur(v.at - a.startedAt)}` : ''}
-      </Text>
-      <Text color={v.t.stops[1]}> ⤢</Text>
+      <Text color={MUTED}>{meta}</Text>
+      {desc ? <Text color={MUTED}>{desc}</Text> : null}
+      {act ? <Text color={v.t.text}>{act}</Text> : null}
     </Button>
   )
 }
@@ -587,55 +593,60 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
   return (
     <Box flexDirection="column">
       {Rule(E, cols, v, 'SPARK HUD', v.t.name)}
-      <Box flexDirection="row" gap={2}>
+      {/* one Text per row: sibling Texts in a row Box wrap into columns once the band narrows */}
+      <Text wrap="truncate-end">
         {Gauge(E, 'CTX', ctxPct, barW, v, v.u?.ctxTokens !== undefined && cols >= 100 ? `  ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : '')}
+        {five ? <Text>{'  '}</Text> : null}
         {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveReset !== undefined && cols >= 110 ? `  ↻ ${fmtDur(fiveReset)}` : '') : null}
+        {week && cols >= 85 ? <Text>{'  '}</Text> : null}
         {week && cols >= 85 ? Gauge(E, '7D', week.percentUsed, Math.max(3, barW - 3), v) : null}
-      </Box>
+      </Text>
       <Box flexDirection="row" gap={2}>
-        <Text>
-          <Text color={v.t.stops[1]} bold>
-            ⬢{' '}
-          </Text>
-          <Text color={v.t.text}>{model}</Text>
-        </Text>
-        <Text>
-          <Text color={v.t.stops[2]} bold>
-            ${' '}
-          </Text>
-          <Text color={v.t.text}>{fmtUsd(v.u?.costUsd).replace('$', '')}</Text>
-        </Text>
-        <Text>
-          <Text color={running > 0 ? v.t.stops[2] : MUTED} bold>
-            {running > 0 ? SPIN[v.f % SPIN.length] : '⚙'}{' '}
-          </Text>
-          <Text color={v.t.text}>
-            {running}/{v.ag.length} agents
-          </Text>
-        </Text>
-        {v.pe.length > 0 ? (
-          <Text>
-            <Text color={busyPeers > 0 ? v.t.stops[0] : MUTED} bold>
-              ◫{' '}
+        <Box flexShrink={1}>
+          <Text wrap="truncate-end">
+            <Text color={v.t.stops[1]} bold>
+              ⬢{' '}
+            </Text>
+            <Text color={v.t.text}>{model}</Text>
+            <Text color={v.t.stops[2]} bold>
+              {'  $ '}
+            </Text>
+            <Text color={v.t.text}>{fmtUsd(v.u?.costUsd).replace('$', '')}</Text>
+            <Text color={running > 0 ? v.t.stops[2] : MUTED} bold>
+              {'  '}
+              {running > 0 ? SPIN[v.f % SPIN.length] : '⚙'}{' '}
             </Text>
             <Text color={v.t.text}>
-              {v.pe.length} win{busyPeers > 0 ? ` · ${busyPeers}▶` : ''}
+              {running}/{v.ag.length} agents
             </Text>
+            {v.pe.length > 0 ? (
+              <Text>
+                <Text color={busyPeers > 0 ? v.t.stops[0] : MUTED} bold>
+                  {'  ◫ '}
+                </Text>
+                <Text color={v.t.text}>
+                  {v.pe.length} win{busyPeers > 0 ? ` · ${busyPeers}▶` : ''}
+                </Text>
+              </Text>
+            ) : null}
+            {v.s.working && v.s.lastAction ? (
+              <Text color={MUTED}>
+                {'  → '}
+                <Text color={v.t.text}>{v.s.lastAction}</Text>
+              </Text>
+            ) : null}
           </Text>
-        ) : null}
-        {v.s.working && v.s.lastAction && cols >= 90 ? (
-          <Text wrap="truncate-end" color={MUTED}>
-            → <Text color={v.t.text}>{v.s.lastAction}</Text>
-          </Text>
-        ) : null}
-        <Button key="toggle" plain label="▾ more" onPress={onToggle} />
+        </Box>
+        <Box flexShrink={0}>
+          <Button key="toggle" plain label="▾ more" onPress={onToggle} />
+        </Box>
       </Box>
       {Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '')}
     </Box>
   )
 }
 
-function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggle: () => void) {
+function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineInterface, onToggle: () => void) {
   const { Box, Text, Button } = E
   const bigW = Math.max(10, Math.min(32, cols - 48))
   const ctxPct = v.u?.ctxPercent ?? 0
@@ -644,23 +655,44 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
   const cacheBase = v.s.input + v.s.cacheRead + v.s.cacheWrite
   const cacheHit = cacheBase > 0 ? Math.round((v.s.cacheRead / cacheBase) * 100) : undefined
   const running = v.ag.filter(a => a.status === 'running' || a.status === 'pending')
-  const shownAgents = [...v.ag].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running')).slice(0, 8)
+  const limits = v.u?.limits ?? []
   const advice = tips(v)
+
+  // Fit the band's rows (fullscreen gives it half the terminal): the 4-row avatar block and
+  // the closing rule always show; sections get the rest by priority, agents first.
+  let room = Math.max(0, maxRows - 5)
+  const grant = (header: number, items: number): number => {
+    if (room < header + Math.min(1, items)) return -1
+    const n = Math.min(items, room - header)
+    room -= header + n
+    return n
+  }
+  const agentRows = grant(1, Math.max(1, Math.min(8, v.ag.length)) + (v.ag.length > 8 ? 1 : 0))
+  const limitRows = grant(1, Math.max(1, limits.length * 2))
+  const sessionRows = grant(1, v.s.working && v.s.lastAction ? 2 : 1)
+  const catRows = grant(0, Math.min(6, used.length))
+  const peerRows = grant(1, Math.max(1, Math.min(6, v.pe.length)))
+  const tipRows = advice.length > 0 ? grant(1, advice.length) : -1
+  const agentCap = v.ag.length > agentRows ? Math.max(0, agentRows - 1) : agentRows
+  const shownAgents = [...v.ag].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running')).slice(0, Math.max(0, agentCap))
+  const withPace = limitRows >= limits.length * 2
 
   return (
     <Box flexDirection="column">
       {withAvatar(E, v, cols, w => (
         <Box flexDirection="column">
           {Rule(E, w, v, 'SPARK HUD', v.t.name)}
-          <Box flexDirection="row" justifyContent="space-between">
-            <Text wrap="truncate-end">
-              <Text color={v.t.text}>{v.u?.model ?? '…'}</Text>
-              <Text color={MUTED}>
-                {' '}
-                · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
+          <Box flexDirection="row" gap={2}>
+            <Box flexGrow={1} flexShrink={1}>
+              <Text wrap="truncate-end">
+                <Text color={v.t.text}>{v.u?.model ?? '…'}</Text>
+                <Text color={MUTED}>
+                  {' '}
+                  · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
+                </Text>
               </Text>
-            </Text>
-            <Box flexDirection="row" gap={2}>
+            </Box>
+            <Box flexDirection="row" gap={2} flexShrink={0}>
               <Button key="theme" plain label="🎨 theme" onPress={() => void nextTheme($)} />
               <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agents' })} />
               <Button key="toggle" plain label="▴ less" onPress={onToggle} />
@@ -684,7 +716,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
           </Text>
         </Box>
       ))}
-      {used.slice(0, 6).map((c, i) => {
+      {used.slice(0, Math.max(0, catRows)).map((c, i) => {
         const w = 14
         const n = Math.max(1, Math.round((c.tokens / catMax) * w))
         return (
@@ -698,14 +730,14 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
         )
       })}
 
-      {Header(E, 'PLAN MAX', v)}
-      {(v.u?.limits ?? []).length === 0 ? <Text color={MUTED}>  No reading yet (arrives with the next response).</Text> : null}
-      {(v.u?.limits ?? []).map(l => {
+      {limitRows >= 0 ? Header(E, 'PLAN MAX', v) : null}
+      {limitRows >= 0 && limits.length === 0 ? <Text color={MUTED}>  No reading yet (arrives with the next response).</Text> : null}
+      {limits.slice(0, Math.max(0, limitRows)).map(l => {
         const p = pace(l, v.at)
-        const diff = p.expected !== undefined ? l.percentUsed - p.expected : undefined
+        const diff = p.expected !== undefined && withPace ? l.percentUsed - p.expected : undefined
         return (
           <Box flexDirection="column">
-            <Text>
+            <Text wrap="truncate-end">
               <Text>{'  '}</Text>
               {Chip(E, (LIMIT_LABEL[l.kind] ?? l.kind).toUpperCase().padEnd(9, ' '), v)}
               <Text> </Text>
@@ -717,7 +749,7 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
               {p.resetIn !== undefined ? <Text color={MUTED}>  ↻ {fmtDur(p.resetIn)}</Text> : null}
             </Text>
             {diff !== undefined ? (
-              <Text>
+              <Text wrap="truncate-end">
                 <Text color={MUTED}>{'              pace '}</Text>
                 {p.runsOutIn !== undefined ? (
                   <Text color={HOT} bold>
@@ -734,7 +766,8 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
         )
       })}
 
-      {Header(E, 'SESSION', v)}
+      {sessionRows >= 0 ? Header(E, 'SESSION', v) : null}
+      {sessionRows >= 1 ? (
       <Text wrap="truncate-end">
         <Text>{'  '}</Text>
         {Chip(E, `$ ${fmtUsd(v.u?.costUsd).replace('$', '')}`, v)}
@@ -747,7 +780,8 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
         <Text>{'  '}</Text>
         {Chip(E, `out ${fmtTokens(v.s.output)}`, v)}
       </Text>
-      {v.s.working && v.s.lastAction ? (
+      ) : null}
+      {sessionRows >= 2 ? (
         <Text wrap="truncate-end">
           <Text color={MUTED}>  now </Text>
           <Text color={v.t.text}>{v.s.lastAction}</Text>
@@ -755,23 +789,23 @@ function expandedView(E: Els, v: View, cols: number, $: EngineInterface, onToggl
         </Text>
       ) : null}
 
-      {Header(E, 'AGENTS', v, `${running.length} active / ${v.ag.length}`)}
-      {v.ag.length === 0 ? <Text color={MUTED}>  None in this session.</Text> : null}
-      {shownAgents.map((a, i) => AgentLine(E, a, v, i, $))}
-      {v.ag.length > shownAgents.length ? <Text color={MUTED}>  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
+      {agentRows >= 0 ? Header(E, 'AGENTS', v, `${running.length} active / ${v.ag.length}`) : null}
+      {agentRows >= 0 && v.ag.length === 0 ? <Text color={MUTED}>  None in this session.</Text> : null}
+      {shownAgents.map((a, i) => AgentLine(E, a, v, i, $, cols))}
+      {agentRows >= 1 && v.ag.length > shownAgents.length ? <Text color={MUTED}>  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
 
-      {Header(E, 'OTHER WINDOWS', v, `${v.pe.length}`)}
-      {v.pe.length === 0 ? <Text color={MUTED}>  No other session running spark-hud.</Text> : null}
-      {v.pe.slice(0, 6).map((p, i) => PeerLine(E, p, v, i))}
+      {peerRows >= 0 ? Header(E, 'OTHER WINDOWS', v, `${v.pe.length}`) : null}
+      {peerRows >= 0 && v.pe.length === 0 ? <Text color={MUTED}>  No other session running spark-hud.</Text> : null}
+      {v.pe.slice(0, Math.max(0, peerRows)).map((p, i) => PeerLine(E, p, v, i))}
 
-      {advice.length > 0 ? Header(E, 'TIPS', v) : null}
-      {advice.map(t => (
+      {tipRows >= 0 ? Header(E, 'TIPS', v) : null}
+      {advice.slice(0, Math.max(0, tipRows)).map(t => (
         <Text wrap="truncate-end" color={WARN}>
           {'  ✦ '}
           {t}
         </Text>
       ))}
-      {Rule(E, cols, v, `theme ${v.t.name} · 🎨 theme to change`, '')}
+      {Rule(E, cols, v, `theme ${v.t.name} · /hud-theme to change`, '')}
     </Box>
   )
 }
@@ -824,12 +858,15 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
     return (
       <Box flexDirection="column">
         {Rule(E, cols, v, 'AGENT VIEWER', v.t.name)}
-        <Text color={MUTED}>  Pick an agent: click one in the HUD (▾ more) or in ◫ panel.</Text>
-        {v.ag.map((x, i) => AgentLine(E, x, v, i, $))}
+        <Text color={MUTED} wrap="truncate-end">
+          {v.ag.length === 0 ? '  No agents yet in this session: they show up here once Claude starts one.' : '  Pick an agent:'}
+        </Text>
+        {v.ag.map((x, i) => AgentLine(E, x, v, i, $, cols))}
       </Box>
     )
   }
   const isRunning = a.status === 'running' || a.status === 'pending'
+  const isBad = a.status === 'failed' || a.status === 'killed'
   const idx = v.ag.findIndex(x => x.id === a.id)
   const prev = v.ag[(idx - 1 + v.ag.length) % v.ag.length]
   const nextA = v.ag[(idx + 1) % v.ag.length]
@@ -843,19 +880,23 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
   return (
     <Box flexDirection="column">
       {Rule(E, cols, v, `AGENT · ${a.name || a.type}`, a.status)}
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text wrap="truncate-end">
-          <Text color={isRunning ? tint : a.status === 'completed' ? OK : MUTED} bold>
-            {isRunning ? SPIN[v.f % SPIN.length] : a.status === 'completed' ? '✔' : '◦'}{' '}
+      <Box flexDirection="row" gap={2}>
+        <Box flexGrow={1} flexShrink={1}>
+          <Text wrap="truncate-end">
+            <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : MUTED} bold>
+              {isRunning ? SPIN[v.f % SPIN.length] : a.status === 'completed' ? '✔' : isBad ? '✘' : '◦'}{' '}
+            </Text>
+            <Text bold color={tint}>{a.type}</Text>
+            {a.description ? <Text color={MUTED}> · {a.description}</Text> : null}
           </Text>
-          <Text bold color={tint}>{a.type}</Text>
-          <Text color={MUTED}> · {a.description}</Text>
-        </Text>
-        <Box flexDirection="row" gap={2}>
-          {v.ag.length > 1 && prev ? <Button key="prev" plain label="◀" onPress={() => void openViewer($, prev.id)} /> : null}
-          {v.ag.length > 1 && nextA ? <Button key="next" plain label="▶" onPress={() => void openViewer($, nextA.id)} /> : null}
-          <Button key="close" plain role="dismiss" label="✕" onPress={() => void $.ui.close({ id: VIEWER })} />
         </Box>
+        {/* the pane's frame draws its own ✕, and Esc closes it */}
+        {v.ag.length > 1 && prev && nextA ? (
+          <Box flexDirection="row" gap={2} flexShrink={0}>
+            <Button key="prev" plain label="◀" onPress={() => void openViewer($, prev.id)} />
+            <Button key="next" plain label="▶" onPress={() => void openViewer($, nextA.id)} />
+          </Box>
+        ) : null}
       </Box>
       <Text wrap="truncate-end">
         {Chip(E, `⚒ ${a.tools}`, v)}
@@ -1011,11 +1052,10 @@ export const register: Register = on => {
     const action = describeTool(String(e.tool), e as unknown as Record<string, unknown>)
     if (e.agentId) {
       const id = e.agentId
-      await update($, agents, list =>
-        list.some(a => a.id === id)
-          ? list.map(a => (a.id === id ? { ...a, lastAction: action, tools: a.tools + 1, updatedAt: at } : a))
-          : [...list, { id, name: '', type: 'agent', description: '', status: 'running', lastAction: action, tools: 1, startedAt: at, updatedAt: at }],
-      )
+      // An id the list does not name yet is a new agent, or one of the engine's own forks
+      // (compaction, memory, classifiers), which never shows in the list and stays out of the HUD.
+      if (!(await read($, agents)).some(a => a.id === id)) await refreshAgents($, at).catch(() => undefined)
+      await update($, agents, list => list.map(a => (a.id === id ? { ...a, lastAction: action, tools: a.tools + 1, updatedAt: at } : a)))
     } else {
       await update($, stats, s => ({ ...s, lastAction: action, turnTools: s.turnTools + 1, toolCalls: s.toolCalls + 1 }))
     }
@@ -1085,14 +1125,14 @@ export const register: Register = on => {
     const cols = e.props.bodyColumns
     const columns = e.viewport?.columns
     const onToggle = () => void toggle($, columns)
-    return (await read($, isExpanded)) ? expandedView(E, v, cols, $, onToggle) : compactCard(E, v, cols, onToggle)
+    return (await read($, isExpanded)) ? expandedView(E, v, cols, e.props.maxRows, $, onToggle) : compactCard(E, v, cols, onToggle)
   })
 
   on('ui.render', { component: 'Pane', requestId: VIEWER }, async ($, e) => {
     const E = $.ui.resolve(e)
     const v = await view($)
     const [id, rows] = await Promise.all([read($, viewerAgent), read($, viewerRows)])
-    return ViewerBody(E, v, e.props.bodyColumns, e.viewport?.rows ?? 24, $, id, rows)
+    return ViewerBody(E, v, e.props.bodyColumns, e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24, $, id, rows)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -1107,7 +1147,7 @@ export const register: Register = on => {
           Agents in this session <Text dimColor>({v.ag.length})</Text>
         </Text>
         {v.ag.length === 0 ? <Text dimColor>  None yet.</Text> : null}
-        {v.ag.map((a, i) => AgentLine(E, a, v, i, $))}
+        {v.ag.map((a, i) => AgentLine(E, a, v, i, $, cols))}
         <Text bold color="claude">
           Other windows <Text dimColor>({v.pe.length})</Text>
         </Text>
