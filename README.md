@@ -150,7 +150,7 @@ Spark HUD never sends anything anywhere: it makes no network calls at all. What 
 ```
 
 - **Never** a command, a file path, a URL, a search term, a prompt, a message or a tool's output. `activity` is the bare tool name, and every MCP tool is just `MCP`, so not even the server name leaks.
-- **No pile-up.** Claude Code gives mods no way to delete files, so a new window takes over the file of a window that has closed or gone silent instead of adding one. The folder holds about as many files as you ever had windows open at once.
+- **No pile-up.** Claude Code gives mods no way to delete files, so a new window takes over the file of a window that has closed or gone silent instead of adding one. The folder holds about as many files as you ever had windows open at once, and you can delete it any time: the next session creates it again.
 - **Old files are scrubbed.** Version 0.4 and earlier wrote the first 48 characters of the last tool call (so the start of a Bash command could land on disk). On start, 0.5 overwrites every stale file in the folder with `{"ended":true}`.
 
 **What it reads:**
