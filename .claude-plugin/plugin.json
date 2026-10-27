@@ -1,11 +1,26 @@
 {
   "name": "spark-hud",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "author": { "name": "agusneocube", "url": "https://github.com/Mel0nidas" },
-  "description": "An animated HUD above the Claude Code prompt: context window, Max plan limits (5h/7d) with burn-rate pace, cost, live subagents and your other Claude Code windows.",
+  "description": "An animated HUD above the Claude Code prompt: context window, plan limits (5h/7d) with burn-rate pace, cost, live subagents and your other Claude Code windows.",
   "homepage": "https://github.com/Mel0nidas/spark-hud",
   "repository": "https://github.com/Mel0nidas/spark-hud",
   "license": "MIT",
   "keywords": ["hud", "context-window", "rate-limits", "max-plan", "usage", "agents", "statusline", "dashboard"],
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "animation": {
+      "type": "string",
+      "title": "Animation",
+      "description": "full: smooth while Claude works, 1 redraw/s at rest. calm: slower motion. off: no motion, a redraw every 15 s at rest.",
+      "options": ["full", "calm", "off"],
+      "default": "full"
+    },
+    "shareWithOtherWindows": {
+      "type": "boolean",
+      "title": "Show your other windows",
+      "description": "Each window writes a tiny status file (folder name, model, context %, busy or idle, bare tool name) to ~/.claude/spark-hud/sessions so the others can list it. Never commands, paths, prompts or output. Off: nothing is written or read.",
+      "default": true
+    }
+  }
 }

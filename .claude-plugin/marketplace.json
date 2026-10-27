@@ -6,7 +6,7 @@
     {
       "name": "spark-hud",
       "source": "./",
-      "description": "An animated HUD for context, Max plan limits, cost, agents and parallel windows."
+      "description": "An animated HUD for context, plan limits, cost, agents and parallel windows."
     }
   ]
 }

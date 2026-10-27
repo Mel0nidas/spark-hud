@@ -32,50 +32,201 @@ const themeIdx = atom({ plugin: 'spark-hud', key: 'theme' } as const, 0)
 const viewerAgent = atom({ plugin: 'spark-hud', key: 'viewerAgent' } as const, null)
 const viewerRows = atom({ plugin: 'spark-hud', key: 'viewerRows' } as const, [])
 const stats = atom({ plugin: 'spark-hud', key: 'stats' } as const, INITIAL_STATS)
+const motionAtom = atom({ plugin: 'spark-hud', key: 'motion' } as const, 'full')
 
 const PANE = 'spark-hud-panel'
 const VIEWER = 'spark-hud-agent'
-const TICK_MS = 220
-const CELEBRATE_MS = 2600
 const PEER_TTL_MS = 10 * 60 * 1000
 
-// ── Avatar (Claude's mascot) ───────────────────────────────────────
+type Motion = 'full' | 'calm' | 'off'
+
+/** Milliseconds to the next tick: fast only while something moves, slow at rest. */
+function tickDelay(motion: Motion, isAnimating: boolean): number {
+  if (motion === 'off') return isAnimating ? 1000 : 15_000
+  if (motion === 'calm') return isAnimating ? 500 : 2000
+  return isAnimating ? 220 : 1000
+}
+
+// ── Avatar: pixel art, 11×8 square pixels, two to a cell ─────────────────
+//
+// Every state and every move between states is drawn from the same pixels:
+//   quiet ──prompt──▶ wakes (crouch, hop) ──▶ dances ──turn done──▶ jumps, bursts into
+//   sparks, a thumbs-up rises, shines, sinks, and the mascot pops back up and blinks.
+//   An interrupted turn shakes its head; a nearly full context makes it sweat.
+// Codes: a light, b body, c shade, k eyes, w glint, s spark, n note, d sweat, '.' empty.
 
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const AVATAR_W = 11
+const AVATAR_H = 8
 const AVATAR_GAP = 3
-const HEAD = ' ▐▛███▜▌ '
-const HEAD_BLINK = ' ▐█████▌ '
-const ARMS = '▝▜█████▛▘'
-const ARMS_LOW = '▗▟█████▙▖'
-const LEGS = '  ▘▘ ▝▝  '
-const LEGS_STEP = '  ▝▘ ▘▝  '
-const NOTES = ['  ♪     ♫  ', '    ♫    ♪ ', ' ♫    ♪    ', '   ♪     ♫ ']
-const CONFETTI = ['✦  ✧   ✦  ', ' ✧   ✦  ✧ ', '  ✦  ✧   ✦', '✧   ✦  ✧  ']
+const BLANK_PX = '.'.repeat(AVATAR_W)
 
-type Mood = 'idle' | 'dance' | 'party' | 'sweat'
+// Claude's mascot: tall eyes, open arms, four legs; three free rows above for hops and notes
+const MASCOT_PX = [
+  '...........',
+  '...........',
+  '..abbbbbc..',
+  '..bkbbbkc..',
+  '..bkbbbkc..',
+  'abbbbbbbbbc',
+  '..bbbbbbc..',
+  '..b.b.c.c..',
+]
 
-type AvatarFrame = { top: string; head: string; arms: string; legs: string; shift: number; drop: boolean }
+// A thumbs-up: c sleeve, b skin, a light edge, c knuckle lines
+const THUMB_PX = [
+  '.....ab....',
+  '....abbc...',
+  '....abbc...',
+  'cc.aabbbbb.',
+  'ccaabbcccc.',
+  'ccabbbbbbbc',
+  'ccabbbcccc.',
+  'cc.cbbbbbc.',
+]
 
-function avatarFrame(f: number, mood: Mood): AvatarFrame {
-  if (mood === 'dance') {
-    const beat = Math.floor(f / 2) % 4
-    return {
-      top: NOTES[beat] ?? '',
-      head: HEAD,
-      arms: f % 2 === 0 ? ARMS : ARMS_LOW,
-      legs: f % 2 === 0 ? LEGS : LEGS_STEP,
-      shift: [1, 0, 1, 2][beat] ?? 1,
-      drop: false,
+// the burst between mascot and thumb: a flash, then sparks flying out
+const FLASH_PX = ['...........', '...........', '.....s.....', '....sws....', '...swwws...', '....sws....', '.....s.....', '...........']
+const SPARKS_PX = ['...........', '.s.......s.', '...........', '.....w.....', 's...w.w...s', '.....w.....', '...........', '.s.......s.']
+const EMBERS_PX = ['s.........s', '...........', '...........', '...........', '...........', '...........', '...........', 's.........s']
+
+// The done sequence, in ms after the turn ended; ticks come every 220 ms, so each step shows
+const DONE_MS = 5500
+const THUMB_UNTIL = 4200
+const WAKE_MS = 450
+const SHAKE_MS = 900
+// at rest the eyes wander now and then (a tick a second: a blink would read as a nap)
+const IDLE_EYES = ['open', 'open', 'open', 'open', 'open', 'right', 'right', 'open', 'open', 'open', 'left', 'left'] as const
+
+type Eyes = 'open' | 'closed' | 'right' | 'left'
+type Pose = { eyes?: Eyes; arms?: 'out' | 'up' | 'down'; legs?: 0 | 1 }
+
+function mascot(pose: Pose = {}): string[] {
+  const px = MASCOT_PX.map(r => [...r])
+  const set = (x: number, y: number, c: string) => {
+    const row = px[y]
+    if (row && x >= 0 && x < AVATAR_W) row[x] = c
+  }
+  const eyes = pose.eyes ?? 'open'
+  if (eyes === 'closed') {
+    set(3, 3, 'b')
+    set(7, 3, 'b')
+  } else if (eyes !== 'open') {
+    const d = eyes === 'right' ? 1 : -1
+    for (const y of [3, 4]) {
+      set(3, y, 'b')
+      set(7, y, 'b')
+      set(3 + d, y, 'k')
+      set(7 + d, y, 'k')
     }
   }
-  if (mood === 'party') {
-    return { top: CONFETTI[f % 4] ?? '', head: f % 4 === 3 ? HEAD_BLINK : HEAD, arms: f % 2 === 0 ? ARMS : ARMS_LOW, legs: LEGS, shift: 1, drop: false }
+  if (pose.arms === 'up' || pose.arms === 'down') {
+    px[5] = [...'..bbbbbbc..']
+    const [y1, y2] = pose.arms === 'up' ? [4, 3] : [6, 7]
+    set(1, y1, 'a')
+    set(0, y2, 'a')
+    set(9, y1, 'c')
+    set(10, y2, 'c')
   }
-  if (mood === 'sweat') return { top: '', head: HEAD, arms: ARMS_LOW, legs: LEGS, shift: 1, drop: true }
-  // at rest: still, with a blink now and then and a slow twinkle above
-  const twinkle = f % 9 < 3 ? `${' '.repeat(8)}${['✧', '✦', '·'][f % 3]}  ` : ''
-  return { top: twinkle, head: f % 7 === 6 ? HEAD_BLINK : HEAD, arms: ARMS, legs: LEGS, shift: 1, drop: false }
+  if (pose.legs === 1) px[7] = [...'.b.b...c.c.']
+  return px.map(r => r.join(''))
+}
+
+/** The sprite moved by (dx, dy), clipped to the canvas. */
+function shift(px: string[], dx: number, dy: number): string[] {
+  return Array.from({ length: AVATAR_H }, (_, y) => {
+    const src = px[y - dy]
+    return src ? Array.from({ length: AVATAR_W }, (_, x) => src[x - dx] ?? '.').join('') : BLANK_PX
+  })
+}
+
+/** `top` drawn over `base`: its empty pixels let the base show. */
+function over(base: string[], top: string[]): string[] {
+  return base.map((row, y) => [...row].map((c, x) => (top[y]?.[x] && top[y]![x] !== '.' ? top[y]![x]! : c)).join(''))
+}
+
+/** One pixel set, where the canvas is empty. */
+function dot(px: string[], x: number, y: number, c: string): string[] {
+  return px.map((row, j) => (j === y ? [...row].map((p, i) => (i === x && p === '.' ? c : p)).join('') : row))
+}
+
+/** The thumbs-up after the turn ended: rises through the embers, shines, holds, sinks. */
+function doneFrame(f: number, t: number): string[] {
+  if (t < 300) return shift(mascot({ arms: 'up', eyes: 'closed' }), 0, -2)
+  if (t < 550) return FLASH_PX
+  if (t < 800) return SPARKS_PX
+  if (t < 1050) return over(EMBERS_PX, shift(THUMB_PX, 0, 4))
+  if (t < 1300) return shift(THUMB_PX, 0, 1)
+  if (t < THUMB_UNTIL) {
+    // a diagonal band of light sweeps across once, then a spark twinkles beside the thumb
+    const band = Math.floor((t - 1300) / 150)
+    let px = THUMB_PX.map((row, y) => [...row].map((c, x) => (c !== '.' && x + (y >> 1) === band ? 'w' : c)).join(''))
+    if (band > 14 && f % 3 !== 2) {
+      const [x, y] = ([[9, 0], [10, 1], [8, 0], [10, 2]] as const)[f % 4]!
+      px = dot(px, x, y, 's')
+    }
+    return px
+  }
+  if (t < 4450) return shift(THUMB_PX, 0, 2)
+  if (t < 4700) return shift(THUMB_PX, 0, 5)
+  if (t < 4950) return shift(mascot(), 0, 4)
+  if (t < 5200) return shift(mascot(), 0, 1)
+  return mascot({ eyes: 'closed' })
+}
+
+/** The avatar's pixels for this frame: its state, or the move between two states. */
+function avatarPixels(v: View): string[] {
+  const { s, at, f, still } = v
+  if (s.working) {
+    const woke = at - s.turnStartedAt
+    if (still) return mascot()
+    if (woke < 220) return shift(mascot({ eyes: 'closed', arms: 'down' }), 0, 1)
+    if (woke < WAKE_MS) return shift(mascot({ arms: 'up' }), 0, -2)
+    const beat = f % 4
+    const isUp = beat % 2 === 0
+    let px = shift(mascot({ arms: isUp ? 'up' : 'down', legs: isUp ? 0 : 1, eyes: beat === 3 ? 'closed' : 'open' }), 0, isUp ? -1 : 0)
+    // a two-pixel note on one side, then the other
+    px = dot(px, beat < 2 ? 0 : 10, 1, 'n')
+    px = dot(px, beat < 2 ? 1 : 9, 0, 'n')
+    return px
+  }
+  const doneFor = s.doneAt ? at - s.doneAt : Infinity
+  if (doneFor < DONE_MS) return still ? (doneFor < THUMB_UNTIL ? THUMB_PX : mascot()) : doneFrame(f, doneFor)
+  const abortFor = s.abortAt ? at - s.abortAt : Infinity
+  if (abortFor < SHAKE_MS && !still) return shift(mascot({ eyes: 'closed' }), [-1, 1, -1, 1][Math.floor(abortFor / 220)] ?? 0, 0)
+  const px = mascot({ eyes: still ? 'open' : IDLE_EYES[f % IDLE_EYES.length] })
+  if ((v.u?.ctxPercent ?? 0) < 85) return px
+  // nearly full: a drop runs down beside the head
+  const [x, y] = ([[9, 2], [9, 3], [10, 4]] as const)[f % 3]!
+  return dot(px, x, y, 'd')
+}
+
+function PixelArt(E: Els, px: string[], paint: (code: string) => string | undefined) {
+  const { Box, Text } = E
+  const rows: RenderElement[] = []
+  for (let y = 0; y < px.length; y += 2) {
+    const cellsInRow: RenderElement[] = []
+    for (let x = 0; x < AVATAR_W; x += 1) {
+      const top = paint(px[y]?.[x] ?? '.')
+      const bottom = paint(px[y + 1]?.[x] ?? '.')
+      if (!top && !bottom) cellsInRow.push(<Text> </Text>)
+      else if (!bottom) cellsInRow.push(<Text color={top}>▀</Text>)
+      else if (!top) cellsInRow.push(<Text color={bottom}>▄</Text>)
+      else if (top === bottom) cellsInRow.push(<Text color={top}>█</Text>)
+      else
+        cellsInRow.push(
+          <Text color={top} backgroundColor={bottom}>
+            ▀
+          </Text>,
+        )
+    }
+    rows.push(<Text>{cellsInRow}</Text>)
+  }
+  return (
+    <Box flexDirection="column" width={AVATAR_W} flexShrink={0}>
+      {rows}
+    </Box>
+  )
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────
@@ -98,6 +249,11 @@ function fmtDur(ms: number): string {
   return `${Math.floor(h / 24)}d ${h % 24}h`
 }
 
+/** Time to a limit's reset; a reading past its reset says so until the next one arrives. */
+function fmtReset(ms: number): string {
+  return ms <= 0 ? 'resetting' : fmtDur(ms)
+}
+
 function fmtUsd(n: number | undefined): string {
   if (n === undefined) return '—'
   return n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`
@@ -113,6 +269,10 @@ const LIMIT_LABEL: Record<string, string> = {
   spend_limit: 'spend',
 }
 
+function limitLabel(kind: string): string {
+  return LIMIT_LABEL[kind] ?? kind.replace(/_/g, ' ')
+}
+
 const LIMIT_SPAN: Record<string, number> = {
   five_hour: 5 * 3600_000,
   seven_day: 7 * 24 * 3600_000,
@@ -120,14 +280,16 @@ const LIMIT_SPAN: Record<string, number> = {
   seven_day_sonnet: 7 * 24 * 3600_000,
 }
 
-type Pace = { resetIn?: number; expected?: number; runsOutIn?: number }
+type Pace = { resetIn?: number; expected?: number; runsOutIn?: number; isOut?: boolean }
 
 function pace(limit: HudLimit, at: number): Pace {
   const resetAt = limit.resetsAt ? Date.parse(limit.resetsAt) : NaN
   if (!Number.isFinite(resetAt)) return {}
-  const resetIn = resetAt - at
+  // a reading older than its reset: the window has rolled over, nothing to forecast
+  const resetIn = Math.max(0, resetAt - at)
+  if (limit.percentUsed >= 100) return { resetIn, isOut: true }
   const span = LIMIT_SPAN[limit.kind]
-  if (span === undefined) return { resetIn }
+  if (span === undefined || resetIn === 0) return { resetIn }
   const elapsed = Math.max(0, span - resetIn)
   const expected = (elapsed / span) * 100
   let runsOutIn: number | undefined
@@ -199,6 +361,11 @@ async function refreshBreakdown($: EngineInterface, columns: number) {
   await update($, breakdown, () => next)
 }
 
+/** Agent names and tasks can hold line breaks; a row shows them on one line. */
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, ' ').trim()
+}
+
 async function refreshAgents($: EngineInterface, at: number) {
   const list = await $.agent.list()
   await update($, agents, prev => {
@@ -207,9 +374,9 @@ async function refreshAgents($: EngineInterface, at: number) {
       const old = byId.get(info.id)
       return {
         id: info.id,
-        name: info.name ?? info.teammateId ?? '',
-        type: info.type,
-        description: info.description,
+        name: oneLine(info.name ?? info.teammateId ?? ''),
+        type: oneLine(info.type),
+        description: oneLine(info.description ?? ''),
         status: info.status,
         lastAction: old?.lastAction ?? '',
         tools: old?.tools ?? 0,
@@ -225,53 +392,125 @@ async function refreshAgents($: EngineInterface, at: number) {
 
 // ── Parallel windows (other sessions) ──────────────────────────────────
 
+// Each window keeps one small file in a shared folder. The engine offers no delete, so a
+// session takes over the file of one that ended (or went silent) instead of adding its own:
+// the folder holds about as many files as windows ever ran at once.
+
+const TOMBSTONE = '{"ended":true}'
+const SLOT_NAME = /^[A-Za-z0-9_-]{1,80}\.json$/
+const MAX_PEERS = 8
+const MAX_PEER_BYTES = 4096
+// control characters and bidi overrides: a peer file must not be able to drive the terminal
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g
+
+/** The folder, under CLAUDE_CONFIG_DIR when set, else ~/.claude. */
 async function peersDir($: EngineInterface): Promise<string | undefined> {
+  const config = await $.env.get('CLAUDE_CONFIG_DIR')
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
-  return home ? `${home.replace(/\\/g, '/')}/.claude/spark-hud/sessions` : undefined
+  const base = config || (home ? `${home}/.claude` : undefined)
+  return base ? `${base.replace(/\\/g, '/').replace(/\/+$/, '')}/spark-hud/sessions` : undefined
 }
 
-async function heartbeat($: EngineInterface, myId: string, ended = false) {
-  const dir = await peersDir($)
-  if (!dir) return
-  const [u, s, list, cwd, at] = await Promise.all([
-    read($, usage),
-    read($, stats),
-    read($, agents),
-    $.session.cwd(),
-    $.clock.now(),
-  ])
-  const me: HudPeer = {
-    id: myId,
-    project: cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd,
-    model: u?.model ?? '',
-    ctxPercent: u?.ctxPercent,
-    fiveHour: u?.limits.find(l => l.kind === 'five_hour')?.percentUsed,
-    working: s.working,
-    lastAction: s.lastAction,
-    agentsRunning: list.filter(a => a.status === 'running').length,
-    updatedAt: at,
-    ended,
+/** Tool names other windows may see: MCP tools say only 'MCP', so no server name leaks. */
+function toolLabel(tool: string): string {
+  return tool.startsWith('mcp__') ? 'MCP' : clip(tool.replace(UNSAFE_CHARS, ''), 24)
+}
+
+/**
+ * A peer file comes from any process that can write the folder: only plain, bounded
+ * values pass, and anything else drops the file.
+ */
+function parsePeer(text: string, at: number): HudPeer | undefined {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return undefined // half-written, or not ours: read again on the next cycle
   }
-  await $.fs.write(`${dir}/${myId}.json`, JSON.stringify(me))
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const o = raw as Record<string, unknown>
+  const str = (x: unknown, n: number) => (typeof x === 'string' ? clip(x.replace(UNSAFE_CHARS, '').trim(), n) : '')
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined)
+  const id = str(o.id, 80)
+  const updatedAt = num(o.updatedAt)
+  if (o.ended === true || !id || updatedAt === undefined) return undefined
+  const ctx = num(o.ctxPercent)
+  return {
+    id,
+    project: str(o.project, 40) || '?',
+    model: str(o.model, 40),
+    ...(ctx !== undefined ? { ctxPercent: Math.max(0, Math.min(100, Math.round(ctx))) } : {}),
+    working: o.working === true,
+    activity: str(o.activity, 24),
+    agentsRunning: Math.max(0, Math.min(99, Math.floor(num(o.agentsRunning) ?? 0))),
+    updatedAt: Math.min(updatedAt, at),
+  }
 }
 
-async function refreshPeers($: EngineInterface, myId: string, at: number) {
+type PeerLink = { id: string; slot: string; lastText: string; lastWriteAt: number }
+
+/**
+ * Picks the file this session writes, and blanks every stale one on the way: files that
+ * spark-hud 0.4 left behind held the start of Bash commands, and no file is deleted.
+ */
+async function claimSlot($: EngineInterface, link: PeerLink, at: number) {
+  link.slot = `${link.id}.json`
   const dir = await peersDir($)
   if (!dir || !(await $.fs.exists(dir))) return
-  const entries = await $.fs.list(dir)
-  const found: HudPeer[] = []
-  for (const entry of entries) {
-    if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue
-    if (entry.name === `${myId}.json` || at - entry.mtimeMs > PEER_TTL_MS) continue
-    try {
-      const peer = JSON.parse(await $.fs.read(`${dir}/${entry.name}`)) as HudPeer
-      if (!peer.ended) found.push(peer)
-    } catch {
-      // a half-written file: read on the next cycle
+  let reuse = ''
+  for (const entry of (await $.fs.list(dir)).slice(0, 500)) {
+    if (entry.kind !== 'file' || !SLOT_NAME.test(entry.name)) continue
+    const isStale = at - entry.mtimeMs > PEER_TTL_MS
+    const isTomb = entry.size === TOMBSTONE.length
+    if (isStale && !isTomb) await $.fs.write(`${dir}/${entry.name}`, TOMBSTONE).catch(() => undefined)
+    if (!reuse && (isStale || isTomb)) reuse = entry.name
+  }
+  if (reuse) link.slot = reuse
+}
+
+async function heartbeat($: EngineInterface, link: PeerLink, ended = false) {
+  const dir = await peersDir($)
+  if (!dir || !link.slot) return
+  const at = await $.clock.now()
+  let text = TOMBSTONE
+  if (!ended) {
+    const [u, s, list, cwd] = await Promise.all([read($, usage), read($, stats), read($, agents), $.session.cwd()])
+    const me: Omit<HudPeer, 'updatedAt'> = {
+      id: link.id,
+      project: cwd.split(/[\\/]/).filter(Boolean).pop() ?? '',
+      model: u?.model ?? '',
+      ...(u?.ctxPercent !== undefined ? { ctxPercent: u.ctxPercent } : {}),
+      working: s.working,
+      activity: s.working ? (s.lastTool ?? '') : '',
+      agentsRunning: list.filter(a => a.status === 'running').length,
     }
+    text = JSON.stringify(me)
+    // unchanged: write only often enough to stay inside the others' freshness window
+    if (text === link.lastText && at - link.lastWriteAt < 60_000) return
+  }
+  await $.fs.write(`${dir}/${link.slot}`, ended ? TOMBSTONE : `${text.slice(0, -1)},"updatedAt":${at}}`)
+  link.lastText = text
+  link.lastWriteAt = at
+}
+
+async function refreshPeers($: EngineInterface, link: PeerLink, at: number) {
+  const dir = await peersDir($)
+  if (!dir || !(await $.fs.exists(dir))) return
+  const found: HudPeer[] = []
+  for (const entry of (await $.fs.list(dir)).slice(0, 500)) {
+    if (entry.kind !== 'file' || !SLOT_NAME.test(entry.name)) continue
+    if (at - entry.mtimeMs > PEER_TTL_MS || entry.size > MAX_PEER_BYTES || entry.size <= TOMBSTONE.length) continue
+    const text = await $.fs.read(`${dir}/${entry.name}`).catch(() => '')
+    const peer = parsePeer(text, at)
+    if (entry.name === link.slot) {
+      // another session took the same old file at the same moment: move to a file of our own
+      if (peer && peer.id !== link.id) link.slot = `${link.id}.json`
+      continue
+    }
+    if (peer && peer.id !== link.id && !found.some(p => p.id === peer.id)) found.push(peer)
   }
   found.sort((a, b) => Number(b.working) - Number(a.working) || b.updatedAt - a.updatedAt)
-  await update($, peers, () => found)
+  await update($, peers, () => found.slice(0, MAX_PEERS))
 }
 
 // ── Palettes (fixed until you change them; kept between sessions) ─────
@@ -343,10 +582,12 @@ type View = {
   ag: HudAgent[]
   pe: HudPeer[]
   t: Theme
+  /** animation 'off': every state drawn still, no moves between them */
+  still: boolean
 }
 
 async function view($: EngineInterface): Promise<View> {
-  const [f, at, u, b, s, ag, pe, ti] = await Promise.all([
+  const [f, at, u, b, s, ag, pe, ti, m] = await Promise.all([
     read($, frame),
     read($, now),
     read($, usage),
@@ -355,15 +596,9 @@ async function view($: EngineInterface): Promise<View> {
     read($, agents),
     read($, peers),
     read($, themeIdx),
+    read($, motionAtom),
   ])
-  return { f, at, u, b, s, ag, pe, t: themeOf(ti) }
-}
-
-function moodOf(v: View): Mood {
-  if (v.s.working) return 'dance'
-  if (v.at < v.s.celebrateUntil) return 'party'
-  if ((v.u?.ctxPercent ?? 0) >= 85) return 'sweat'
-  return 'idle'
+  return { f, at, u, b, s, ag, pe, t: themeOf(ti), still: m === 'off' }
 }
 
 const PARTIAL = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
@@ -420,6 +655,33 @@ function Chip(E: Els, label: string, v: View, color?: string) {
   )
 }
 
+const isLive = (a: HudAgent) => a.status === 'running' || a.status === 'pending'
+
+/** The "finished, your turn" sign: shown from the end of a turn until the next prompt. */
+function DoneBadge(E: Els, v: View) {
+  const { Text } = E
+  if (!v.s.isReady || v.s.working) return null
+  // the prompt is free, but background agents may still be at work
+  const running = v.ag.filter(isLive).length
+  return (
+    <Text>
+      <Text color={OK}>▐</Text>
+      <Text backgroundColor={OK} color="#10241A" bold>
+        ✔ DONE
+      </Text>
+      <Text color={OK}>▌</Text>
+      {running > 0 ? (
+        <Text color={WARN}>
+          {' '}
+          ready · {running} {running === 1 ? 'agent' : 'agents'} still running{'  '}
+        </Text>
+      ) : (
+        <Text color={OK}> ready for the next task{'  '}</Text>
+      )}
+    </Text>
+  )
+}
+
 function Gauge(E: Els, label: string, pct: number, width: number, v: View, suffix?: string) {
   const { Text } = E
   return (
@@ -433,32 +695,11 @@ function Gauge(E: Els, label: string, pct: number, width: number, v: View, suffi
   )
 }
 
-/** Claude's mascot, four lines tall, tinted by the theme. */
+/** The pixel-art avatar, four cells tall, in the theme's colors. */
 function Avatar(E: Els, v: View) {
-  const { Box, Text } = E
-  const mood = moodOf(v)
-  const a = avatarFrame(v.f, mood)
-  const body = (line: string, color: string, extra = '') => {
-    const pad = ' '.repeat(a.shift)
-    const right = ' '.repeat(Math.max(0, AVATAR_W - a.shift - [...line].length - [...extra].length))
-    return (
-      <Text>
-        <Text>{pad}</Text>
-        <Text color={color}>{line}</Text>
-        {extra ? <Text color="#6C9BC8">{extra}</Text> : null}
-        <Text>{right}</Text>
-      </Text>
-    )
-  }
-  const glow = mood === 'dance' || mood === 'party' ? lerp(v.t.stops, 0.4 + 0.3 * wave(v.f, 7, 0)) : v.t.stops[1]!
-  return (
-    <Box flexDirection="column" width={AVATAR_W} flexShrink={0}>
-      <Text color={v.t.stops[2]}>{a.top.padEnd(AVATAR_W, ' ')}</Text>
-      {body(a.head, glow, a.drop ? ';' : '')}
-      {body(a.arms, glow)}
-      {body(a.legs, v.t.stops[0]!)}
-    </Box>
-  )
+  const [dark, mid, light] = v.t.stops
+  const paint: Record<string, string> = { a: light!, b: mid!, c: dark!, k: v.t.chip, w: '#FFF6EE', s: light!, n: light!, d: '#6C9BC8' }
+  return PixelArt(E, avatarPixels(v), code => paint[code])
 }
 
 /** Puts the avatar to the right of a block, when there is room for both. */
@@ -502,8 +743,9 @@ function tips(v: View): string[] {
   else if (ctx >= 60) out.push('Context past 60%: consider /compact when this step is done.')
   for (const l of v.u?.limits ?? []) {
     const p = pace(l, v.at)
-    if (p.runsOutIn !== undefined)
-      out.push(`At this pace the ${LIMIT_LABEL[l.kind] ?? l.kind} limit runs out in ~${fmtDur(p.runsOutIn)}: use /model sonnet for simple work.`)
+    if (p.isOut) out.push(`The ${limitLabel(l.kind)} limit is used up: it is back in ${fmtDur(p.resetIn ?? NaN)}.`)
+    else if (p.runsOutIn !== undefined)
+      out.push(`At this pace the ${limitLabel(l.kind)} limit runs out in ~${fmtDur(p.runsOutIn)}: use /model sonnet for simple work.`)
   }
   const cacheBase = v.s.input + v.s.cacheRead + v.s.cacheWrite
   if (cacheBase > 50_000 && v.s.cacheRead / cacheBase < 0.5)
@@ -513,11 +755,29 @@ function tips(v: View): string[] {
   return out
 }
 
-/** Cuts a text to `n` cells with an ellipsis; '' when there is no room. */
+// East Asian wide letters and emoji: two terminal cells each
+const WIDE = /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{1fa70}-\u{1faff}\u{20000}-\u{3fffd}]/u
+
+/** How many terminal cells a text takes. */
+function cells(s: string): number {
+  let n = 0
+  for (const ch of s) n += ch === '\ufe0f' || ch === '\u200d' ? 0 : WIDE.test(ch) ? 2 : 1
+  return n
+}
+
+/** Cuts a text to `n` terminal cells with an ellipsis; '' when there is no room. */
 function clip(s: string, n: number): string {
-  const chars = [...s]
-  if (chars.length <= n) return s
-  return n <= 1 ? '' : `${chars.slice(0, n - 1).join('')}…`
+  if (cells(s) <= n) return s
+  if (n <= 1) return ''
+  let out = ''
+  let used = 0
+  for (const ch of s) {
+    const w = cells(ch)
+    if (used + w > n - 1) break
+    out += ch
+    used += w
+  }
+  return `${out}…`
 }
 
 function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface, cols: number) {
@@ -529,9 +789,9 @@ function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface, 
   const name = a.name || a.type
   const meta = ` ${a.tools}⚒${isRunning ? ` ${fmtDur(v.at - a.startedAt)}` : ''} ⤢`
   // A Button's Text children wrap rather than truncate, so the line is cut to the row here.
-  let left = cols - 1 - 3 - [...name].length - [...meta].length
+  let left = cols - 1 - 3 - cells(name) - cells(meta)
   const desc = a.description ? clip(` · ${a.description}`, left) : ''
-  left -= [...desc].length
+  left -= cells(desc)
   const act = a.lastAction ? clip(` → ${a.lastAction}`, left) : ''
   return (
     <Button key={`agent-${a.id}`} plain label={`${name} ${a.description}`} onPress={() => void openViewer($, a.id)}>
@@ -559,7 +819,7 @@ function PeerLine(E: Els, p: HudPeer, v: View, i: number) {
       <Text color={MUTED}> · {p.model}</Text>
       {p.ctxPercent !== undefined ? <Text color={statusColor(p.ctxPercent)}> ctx {p.ctxPercent}%</Text> : null}
       {p.agentsRunning > 0 ? <Text color={v.t.text}> · {p.agentsRunning} {p.agentsRunning === 1 ? "agent" : "agents"}</Text> : null}
-      {p.lastAction ? <Text color={v.t.text}> → {p.lastAction}</Text> : null}
+      {p.activity ? <Text color={v.t.text}> → {p.activity}</Text> : null}
       {isStale ? <Text color={MUTED}> (no signal {fmtDur(v.at - p.updatedAt)})</Text> : null}
     </Text>
   )
@@ -575,11 +835,17 @@ function Header(E: Els, text: string, v: View, count?: string) {
   )
 }
 
-function compactCard(E: Els, v: View, cols: number, onToggle: () => void) {
-  return withAvatar(E, v, cols, w => compactBody(E, v, w, onToggle))
+/**
+ * The two-line card in its frame. Below the prompt Claude Code lists running agents and
+ * tasks, and every row they take comes out of this band: under 4 rows the frame goes
+ * first, then the gauges, so what is left is never squashed.
+ */
+function compactCard(E: Els, v: View, cols: number, onToggle: () => void, maxRows = Infinity) {
+  if (maxRows >= 4) return withAvatar(E, v, cols, w => compactBody(E, v, w, onToggle, 4))
+  return compactBody(E, v, cols, onToggle, Math.max(1, maxRows))
 }
 
-function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
+function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: number) {
   const { Box, Text, Button } = E
   const barW = cols >= 130 ? 12 : cols >= 100 ? 9 : cols >= 80 ? 6 : 4
   const ctxPct = v.u?.ctxPercent ?? 0
@@ -588,22 +854,26 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
   const running = v.ag.filter(a => a.status === 'running' || a.status === 'pending').length
   const busyPeers = v.pe.filter(p => p.working).length
   const fiveReset = five ? pace(five, v.at).resetIn : undefined
-  const model = (v.u?.model ?? '…').replace(/^claude-/, '')
+  const model = (v.u?.model || '…').replace(/^claude-/, '')
 
   return (
     <Box flexDirection="column">
-      {Rule(E, cols, v, 'SPARK HUD', v.t.name)}
+      {rows >= 3 ? Rule(E, cols, v, 'SPARK HUD', v.t.name) : null}
       {/* one Text per row: sibling Texts in a row Box wrap into columns once the band narrows */}
+      {rows >= 2 ? (
       <Text wrap="truncate-end">
         {Gauge(E, 'CTX', ctxPct, barW, v, v.u?.ctxTokens !== undefined && cols >= 100 ? `  ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : '')}
         {five ? <Text>{'  '}</Text> : null}
-        {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveReset !== undefined && cols >= 110 ? `  ↻ ${fmtDur(fiveReset)}` : '') : null}
+        {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveReset !== undefined && cols >= 110 ? `  ↻ ${fmtReset(fiveReset)}` : '') : null}
         {week && cols >= 85 ? <Text>{'  '}</Text> : null}
         {week && cols >= 85 ? Gauge(E, '7D', week.percentUsed, Math.max(3, barW - 3), v) : null}
       </Text>
+      ) : null}
       <Box flexDirection="row" gap={2}>
         <Box flexShrink={1}>
           <Text wrap="truncate-end">
+            {DoneBadge(E, v)}
+            {rows < 2 ? <Text bold color={statusColor(ctxPct)}>{`CTX ${Math.round(ctxPct)}%  `}</Text> : null}
             <Text color={v.t.stops[1]} bold>
               ⬢{' '}
             </Text>
@@ -641,7 +911,7 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void) {
           <Button key="toggle" plain label="▾ more" onPress={onToggle} />
         </Box>
       </Box>
-      {Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '')}
+      {rows >= 4 ? Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '') : null}
     </Box>
   )
 }
@@ -685,7 +955,8 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
           <Box flexDirection="row" gap={2}>
             <Box flexGrow={1} flexShrink={1}>
               <Text wrap="truncate-end">
-                <Text color={v.t.text}>{v.u?.model ?? '…'}</Text>
+                {DoneBadge(E, v)}
+                <Text color={v.t.text}>{v.u?.model || '…'}</Text>
                 <Text color={MUTED}>
                   {' '}
                   · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
@@ -693,7 +964,7 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
               </Text>
             </Box>
             <Box flexDirection="row" gap={2} flexShrink={0}>
-              <Button key="theme" plain label="🎨 theme" onPress={() => void nextTheme($)} />
+              <Button key="theme" plain label="◐ theme" onPress={() => void nextTheme($)} />
               <Button key="panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: 'Spark HUD · agents' })} />
               <Button key="toggle" plain label="▴ less" onPress={onToggle} />
             </Box>
@@ -730,28 +1001,32 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
         )
       })}
 
-      {limitRows >= 0 ? Header(E, 'PLAN MAX', v) : null}
-      {limitRows >= 0 && limits.length === 0 ? <Text color={MUTED}>  No reading yet (arrives with the next response).</Text> : null}
+      {limitRows >= 0 ? Header(E, 'PLAN LIMITS', v) : null}
+      {limitRows >= 0 && limits.length === 0 ? <Text color={MUTED} wrap="truncate-end">  None yet: they arrive with the next reply (API-key sessions have none).</Text> : null}
       {limits.slice(0, Math.max(0, limitRows)).map(l => {
         const p = pace(l, v.at)
-        const diff = p.expected !== undefined && withPace ? l.percentUsed - p.expected : undefined
+        const diff = (p.expected !== undefined || p.isOut) && withPace ? l.percentUsed - (p.expected ?? 100) : undefined
         return (
           <Box flexDirection="column">
             <Text wrap="truncate-end">
               <Text>{'  '}</Text>
-              {Chip(E, (LIMIT_LABEL[l.kind] ?? l.kind).toUpperCase().padEnd(9, ' '), v)}
+              {Chip(E, clip(limitLabel(l.kind).toUpperCase(), 9).padEnd(9, ' '), v)}
               <Text> </Text>
               {GradBar(E, l.percentUsed, bigW, v, v.s.working)}
               <Text bold color={statusColor(l.percentUsed)}>
                 {' '}
                 {Math.round(l.percentUsed)}%
               </Text>
-              {p.resetIn !== undefined ? <Text color={MUTED}>  ↻ {fmtDur(p.resetIn)}</Text> : null}
+              {p.resetIn !== undefined ? <Text color={MUTED}>  ↻ {fmtReset(p.resetIn)}</Text> : null}
             </Text>
             {diff !== undefined ? (
               <Text wrap="truncate-end">
                 <Text color={MUTED}>{'              pace '}</Text>
-                {p.runsOutIn !== undefined ? (
+                {p.isOut ? (
+                  <Text color={HOT} bold>
+                    ■ limit reached, back in {fmtDur(p.resetIn ?? NaN)}
+                  </Text>
+                ) : p.runsOutIn !== undefined ? (
                   <Text color={HOT} bold>
                     ▲ runs out in ~{fmtDur(p.runsOutIn)}, before the reset
                   </Text>
@@ -790,12 +1065,12 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
       ) : null}
 
       {agentRows >= 0 ? Header(E, 'AGENTS', v, `${running.length} active / ${v.ag.length}`) : null}
-      {agentRows >= 0 && v.ag.length === 0 ? <Text color={MUTED}>  None in this session.</Text> : null}
+      {agentRows >= 0 && v.ag.length === 0 ? <Text color={MUTED} wrap="truncate-end">  None in this session.</Text> : null}
       {shownAgents.map((a, i) => AgentLine(E, a, v, i, $, cols))}
-      {agentRows >= 1 && v.ag.length > shownAgents.length ? <Text color={MUTED}>  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
+      {agentRows >= 1 && v.ag.length > shownAgents.length ? <Text color={MUTED} wrap="truncate-end">  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
 
       {peerRows >= 0 ? Header(E, 'OTHER WINDOWS', v, `${v.pe.length}`) : null}
-      {peerRows >= 0 && v.pe.length === 0 ? <Text color={MUTED}>  No other session running spark-hud.</Text> : null}
+      {peerRows >= 0 && v.pe.length === 0 ? <Text color={MUTED} wrap="truncate-end">  No other session running spark-hud.</Text> : null}
       {v.pe.slice(0, Math.max(0, peerRows)).map((p, i) => PeerLine(E, p, v, i))}
 
       {tipRows >= 0 ? Header(E, 'TIPS', v) : null}
@@ -839,7 +1114,8 @@ async function refreshViewer($: EngineInterface, agentId: string) {
       })
     }
   }
-  await update($, viewerRows, () => rows.slice(-300))
+  // keep the task, which opens the transcript, and the latest steps
+  await update($, viewerRows, () => (rows.length > 300 ? [rows[0]!, ...rows.slice(-299)] : rows))
 }
 
 async function openViewer($: EngineInterface, agentId: string) {
@@ -917,8 +1193,8 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
           <Text color={v.t.text}>{firstLine(task.text, 400)}</Text>
         </Text>
       ) : null}
-      {body.length > shown.length ? <Text color={MUTED}>  … {body.length - shown.length} earlier steps</Text> : null}
-      {shown.length === 0 ? <Text color={MUTED}>  {isRunning ? 'Waiting for the first step…' : 'No transcript available for this agent.'}</Text> : null}
+      {body.length > shown.length ? <Text color={MUTED} wrap="truncate-end">  … {body.length - shown.length} earlier steps</Text> : null}
+      {shown.length === 0 ? <Text color={MUTED} wrap="truncate-end">  {isRunning ? 'Waiting for the first step…' : 'No transcript available for this agent.'}</Text> : null}
       {shown.map((r, i) =>
         r.kind === 'text' ? (
           <Text wrap="truncate-end">
@@ -948,19 +1224,95 @@ async function toggle($: EngineInterface, columns?: number) {
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
-export const register: Register = on => {
-  let myId = ''
-  let ticks = 0
-  let ticker: { cancel: () => void } | undefined
+/** What the tick loop and the hooks share; one per loaded module. */
+type Runtime = {
+  motion: Motion
+  isSharing: boolean
+  link: PeerLink
+  last: { agents: number; viewer: number; peers: number; usage: number }
+  // highest threshold already announced, per limit kind and for the context ('ctx')
+  warned: Map<string, number>
+  timer?: { cancel: () => void }
+  isLooping: boolean
+}
+
+async function tick($: EngineInterface, rt: Runtime): Promise<number> {
+  const { last } = rt
+  const at = await $.clock.now()
+  const [s, ag, watching] = await Promise.all([read($, stats), read($, agents), read($, viewerAgent)])
+  const hasRunning = ag.some(isLive)
+  const isBusy = s.working || hasRunning
+  const isAnimating = isBusy || at < s.celebrateUntil
+  if (rt.motion !== 'off') await update($, frame, f => (f + 1) % 10_000)
+  await update($, now, () => at)
+  // the agent viewer, only while its pane is open: every second while its agent runs
+  if (watching) {
+    const target = ag.find(a => a.id === watching)
+    const every = !target || isLive(target) ? 1000 : 5000
+    if (at - last.viewer >= every) {
+      last.viewer = at
+      await refreshViewer($, watching).catch(() => undefined)
+    }
+  }
+  if (isBusy && at - last.agents >= 1000) {
+    last.agents = at
+    await refreshAgents($, at).catch(() => undefined)
+  }
+  if (rt.isSharing && at - last.peers >= 5000) {
+    last.peers = at
+    await heartbeat($, rt.link).catch(() => undefined)
+    await refreshPeers($, rt.link, at).catch(() => undefined)
+  }
+  // at rest: keep reset countdowns honest
+  if (!isBusy && at - last.usage >= 30_000) {
+    last.usage = at
+    await refreshUsage($).catch(() => undefined)
+  }
+  return tickDelay(rt.motion, isAnimating)
+}
+
+/** (Re)starts the tick loop: on session start, and when work begins during a slow rest. */
+function kick($: EngineInterface, rt: Runtime, ms = 0) {
+  rt.timer?.cancel()
+  rt.timer = $.clock.after(ms, () => {
+    if (rt.isLooping) return
+    rt.isLooping = true
+    void tick($, rt)
+      .catch(() => tickDelay(rt.motion, false))
+      .then(delay => {
+        rt.isLooping = false
+        kick($, rt, delay)
+      })
+  })
+}
+
+/** Toasts once when a reading crosses a threshold upward; it re-arms once the reading falls back. */
+function warnOnce($: EngineInterface, rt: Runtime, key: string, pct: number, thresholds: number[], text: (level: number) => string) {
+  const level = thresholds.filter(t => pct >= t).pop() ?? 0
+  if (level > (rt.warned.get(key) ?? 0)) $.ui.toast(text(level))
+  rt.warned.set(key, level)
+}
+
+export const register: Register = (on, options) => {
+  const rt: Runtime = {
+    motion: options.animation === 'calm' || options.animation === 'off' ? options.animation : 'full',
+    isSharing: options.shareWithOtherWindows !== false,
+    link: { id: '', slot: '', lastText: '', lastWriteAt: 0 },
+    last: { agents: 0, viewer: 0, peers: 0, usage: 0 },
+    warned: new Map(),
+    isLooping: false,
+  }
+  const { link } = rt
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    myId = await $.session.id()
+    link.id = await $.session.id()
     const u = await $.session.usage()
     const at = await $.clock.now()
     await update($, stats, s => ({ ...s, startedAt: u.startedAt }))
+    await update($, motionAtom, () => rt.motion)
     const saved = await $.store.get('theme').catch(() => undefined)
-    if (typeof saved === 'number') await update($, themeIdx, () => saved)
+    if (typeof saved === 'number' && Number.isInteger(saved)) await update($, themeIdx, () => saved)
     await update($, now, () => at)
     await refreshUsage($).catch(() => undefined)
 
@@ -969,48 +1321,17 @@ export const register: Register = on => {
     await $.command.register({ name: 'hud-agents', description: 'Spark HUD: open the agent viewer (live transcript of a subagent)' })
     await $.command.register({ name: 'hud-panel', description: 'Spark HUD: open the side panel with agents and windows' })
 
-    ticker?.cancel()
-    ticker = $.clock.every(TICK_MS, () => {
-      ticks += 1
-      void (async () => {
-        const at = await $.clock.now()
-        const [s, ag] = await Promise.all([read($, stats), read($, agents)])
-        const hasRunning = ag.some(a => a.status === 'running' || a.status === 'pending')
-        const isAnimating = s.working || at < s.celebrateUntil || hasRunning
-        // fast while working; at rest, a gentle shimmer (~1 fps)
-        if (isAnimating || ticks % 4 === 0) {
-          await update($, frame, f => (f + 1) % 10_000)
-          await update($, now, () => at)
-        }
-        // every ~1s: the agent viewer, while its agent runs
-        const watching = await read($, viewerAgent)
-        if (watching && ticks % 4 === 0) {
-          const target = ag.find(a => a.id === watching)
-          if (!target || target.status === 'running' || target.status === 'pending' || ticks % 20 === 0)
-            await refreshViewer($, watching).catch(() => undefined)
-        }
-        // every ~1s while something runs: agents
-        if ((s.working || hasRunning) && ticks % 5 === 0) await refreshAgents($, at).catch(() => undefined)
-        // every ~5s: heartbeat for other windows, and read theirs
-        if (ticks % 23 === 0) {
-          await heartbeat($, myId).catch(() => undefined)
-          await refreshPeers($, myId, at).catch(() => undefined)
-        }
-        // every ~30s at rest: reset countdowns
-        if (!isAnimating && ticks % 136 === 0) {
-          await update($, now, () => at)
-          await refreshUsage($).catch(() => undefined)
-        }
-      })().catch(() => undefined)
-    })
-
-    await heartbeat($, myId).catch(() => undefined)
+    if (rt.isSharing) {
+      await claimSlot($, link, at).catch(() => undefined)
+      await heartbeat($, link).catch(() => undefined)
+    }
+    kick($, rt)
     return result
   })
 
   on('session.end', async ($, e, next) => {
-    ticker?.cancel()
-    if (myId) await heartbeat($, myId, true).catch(() => undefined)
+    rt.timer?.cancel()
+    if (rt.isSharing && link.slot) await heartbeat($, link, true).catch(() => undefined)
     return next(e)
   })
 
@@ -1040,16 +1361,29 @@ export const register: Register = on => {
     return { text: opened.isPlaced ? 'Spark HUD panel opened.' : 'Panel ready: it shows once the terminal is wider (or in fullscreen mode).' }
   })
 
+  // a closed viewer stops reading its agent's transcript
+  on('ui.close', async ($, e, next) => {
+    if (e.id === VIEWER) {
+      await update($, viewerAgent, () => null)
+      await update($, viewerRows, () => [])
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('prompt.submit', async ($, e, next) => {
     const at = await $.clock.now()
-    await update($, stats, s => ({ ...s, working: true, turnStartedAt: at, turnTools: 0, lastAction: 'thinking…' }))
+    await update($, stats, s => ({ ...s, working: true, turnStartedAt: at, turnTools: 0, lastAction: 'thinking…', lastTool: '', isReady: false, doneAt: 0 }))
     await update($, now, () => at)
+    // the wake-up plays now, not at the next resting tick
+    kick($, rt)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('tool.call', async ($, e, next) => {
     const at = await $.clock.now()
-    const action = describeTool(String(e.tool), e as unknown as Record<string, unknown>)
+    const tool = String(e.tool)
+    // shown on this screen only; other windows get toolLabel(tool) alone
+    const action = describeTool(tool, e as unknown as Record<string, unknown>)
     if (e.agentId) {
       const id = e.agentId
       // An id the list does not name yet is a new agent, or one of the engine's own forks
@@ -1057,7 +1391,7 @@ export const register: Register = on => {
       if (!(await read($, agents)).some(a => a.id === id)) await refreshAgents($, at).catch(() => undefined)
       await update($, agents, list => list.map(a => (a.id === id ? { ...a, lastAction: action, tools: a.tools + 1, updatedAt: at } : a)))
     } else {
-      await update($, stats, s => ({ ...s, lastAction: action, turnTools: s.turnTools + 1, toolCalls: s.toolCalls + 1 }))
+      await update($, stats, s => ({ ...s, lastAction: action, lastTool: toolLabel(tool), turnTools: s.turnTools + 1, toolCalls: s.toolCalls + 1 }))
     }
     const result = await next(e)
     if (e.tool === 'Agent') await refreshAgents($, await $.clock.now()).catch(() => undefined)
@@ -1070,7 +1404,7 @@ export const register: Register = on => {
     const u = result.usage
     if (id && u) {
       const ctx = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
-      await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens: ctx, model: u.model } : a)))
+      await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens: ctx, model: u.model } : a))).catch(() => undefined)
     }
     return result
   })
@@ -1091,30 +1425,34 @@ export const register: Register = on => {
       lastTurnMs: e.durationMs,
       lastTurnTools: s.turnTools,
       lastAction: e.isAborted ? 'interrupted' : 'done',
+      lastTool: '',
+      isReady: !e.isAborted,
       input: s.input + (u?.input_tokens ?? 0),
       output: s.output + (u?.output_tokens ?? 0),
       cacheRead: s.cacheRead + (u?.cache_read_input_tokens ?? 0),
       cacheWrite: s.cacheWrite + (u?.cache_creation_input_tokens ?? 0),
-      celebrateUntil: e.isAborted ? 0 : at + CELEBRATE_MS,
+      doneAt: e.isAborted ? 0 : at,
+      abortAt: e.isAborted ? at : s.abortAt,
+      celebrateUntil: at + (e.isAborted ? SHAKE_MS : DONE_MS),
     }))
     await update($, now, () => at)
     await refreshUsage($).catch(() => undefined)
     await refreshAgents($, at).catch(() => undefined)
     if (await read($, isExpanded)) await refreshBreakdown($, 100).catch(() => undefined)
-    if (myId) await heartbeat($, myId).catch(() => undefined)
+    if (rt.isSharing && link.slot) await heartbeat($, link).catch(() => undefined)
+    kick($, rt)
     return next(e)
   })
 
   on('session.measure', async ($, e, next) => {
     const result = await next(e)
     await refreshUsage($).catch(() => undefined)
-    const ctx = e.context.percent ?? 0
     for (const l of e.rateLimits) {
-      if (e.changed.includes('rateLimits') && (l.percentUsed >= 90 || l.percentUsed === 75)) {
-        $.ui.toast(`✻ ${LIMIT_LABEL[l.kind] ?? l.kind} limit at ${Math.round(l.percentUsed)}%`)
-      }
+      const label = limitLabel(l.kind)
+      warnOnce($, rt, `limit:${l.kind}`, l.percentUsed, [75, 90], n => `✻ ${label} limit past ${n}%`)
     }
-    if (e.changed.includes('context') && ctx >= 85) $.ui.toast(`✻ Context at ${ctx}%: a good moment to /compact`)
+    const ctx = e.context.percent
+    if (ctx !== undefined) warnOnce($, rt, 'ctx', ctx, [85], () => `✻ Context at ${ctx}%: a good moment to /compact`)
     return result
   })
 
@@ -1125,7 +1463,9 @@ export const register: Register = on => {
     const cols = e.props.bodyColumns
     const columns = e.viewport?.columns
     const onToggle = () => void toggle($, columns)
-    return (await read($, isExpanded)) ? expandedView(E, v, cols, e.props.maxRows, $, onToggle) : compactCard(E, v, cols, onToggle)
+    const rows = e.props.maxRows
+    if (rows < 1) return next(e)
+    return (await read($, isExpanded)) && rows >= 8 ? expandedView(E, v, cols, rows, $, onToggle) : compactCard(E, v, cols, onToggle, rows)
   })
 
   on('ui.render', { component: 'Pane', requestId: VIEWER }, async ($, e) => {
@@ -1143,18 +1483,19 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {compactCard(E, v, cols, () => void toggle($))}
-        <Text bold color="claude">
+        <Text bold color="claude" wrap="truncate-end">
           Agents in this session <Text dimColor>({v.ag.length})</Text>
         </Text>
-        {v.ag.length === 0 ? <Text dimColor>  None yet.</Text> : null}
+        {v.ag.length === 0 ? <Text dimColor wrap="truncate-end">  None yet.</Text> : null}
         {v.ag.map((a, i) => AgentLine(E, a, v, i, $, cols))}
-        <Text bold color="claude">
+        <Text bold color="claude" wrap="truncate-end">
           Other windows <Text dimColor>({v.pe.length})</Text>
         </Text>
-        {v.pe.length === 0 ? <Text dimColor>  Open another Claude Code session: it shows up here on its own.</Text> : null}
+        {v.pe.length === 0 ? (
+          <Text dimColor wrap="truncate-end">{rt.isSharing ? '  Open another Claude Code session: it shows up here on its own.' : '  Sharing between windows is off in this mod’s settings.'}</Text>
+        ) : null}
         {v.pe.map((p, i) => PeerLine(E, p, v, i))}
       </Box>
     )
   })
 }
-

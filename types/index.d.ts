@@ -41,17 +41,17 @@ export type HudViewRow = {
   isPending?: boolean
 }
 
+/** What one window shares with the others: no commands, paths, prompts or output. */
 export type HudPeer = {
   id: string
   project: string
   model: string
   ctxPercent?: number
-  fiveHour?: number
   working: boolean
-  lastAction: string
+  /** The bare name of the tool last used ('Bash', 'Read', 'MCP'), never its input. */
+  activity: string
   agentsRunning: number
   updatedAt: number
-  ended?: boolean
 }
 
 export type HudStats = {
@@ -64,11 +64,20 @@ export type HudStats = {
   turnTools: number
   toolCalls: number
   lastAction: string
+  /** The bare tool name behind lastAction, the only part shared with other windows. */
+  lastTool?: string
   input: number
   output: number
   cacheRead: number
   cacheWrite: number
+  /** Ticks stay fast until then: a transition is playing. */
   celebrateUntil: number
+  /** When the last turn finished (0: a new one started); the done sequence plays from it. */
+  doneAt?: number
+  /** When the last turn was interrupted: the head shake plays from it. */
+  abortAt?: number
+  /** The last turn finished and no prompt has been sent since: the DONE sign shows. */
+  isReady?: boolean
 }
 
 declare module 'claude-code' {
@@ -85,6 +94,7 @@ declare module 'claude-code' {
       theme: number
       viewerAgent: string | null
       viewerRows: HudViewRow[]
+      motion: string
     }
   }
 }
