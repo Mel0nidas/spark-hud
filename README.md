@@ -17,7 +17,7 @@
 
 Claude Code tells you a lot, but only when you ask: `/context` for the window, `/cost` for the bill, a warning when you are already close to the limit. **Spark HUD keeps all of it on screen, live**, in two compact lines that stay out of your way. Click one button and it opens into a full dashboard.
 
-It is built for people who run long sessions on a **Pro or Max subscription** and work with **many agents and windows at once**. It works on macOS, Linux and Windows, in any terminal Claude Code supports.
+It is built for people who run long sessions on a **Pro or Max subscription** and work with **many agents and windows at once**. It works on macOS, Linux and Windows, in any terminal Claude Code supports and in the Code tab of the Claude desktop app.
 
 ## Why you'll want it
 
@@ -108,6 +108,8 @@ Claude Code reads a folder marketplace straight from disk. After you edit the fi
 | `ctrl+x tab` | Focus the HUD to use its buttons from the keyboard |
 
 The layout adapts to the terminal width and height. On narrow terminals the bars get shorter and the secondary figures are hidden; when Claude Code's own agent list below the prompt takes rows from the band, the HUD drops its frame and then its gauges instead of being squashed.
+
+In the **Claude desktop app** (Code tab) the HUD draws natively for the app: the mascot and the bars are crisp vector art instead of block characters, the text follows the app's light or dark theme, and the gauges wrap onto a new line when the window is narrow. The buttons, `/hud` commands and settings are the same. After installing or updating, run `/reload-plugins` in the session.
 
 ## Settings
 
