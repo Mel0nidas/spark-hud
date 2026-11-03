@@ -572,6 +572,11 @@ function statusColor(pct: number): string {
 // ── Drawing ───────────────────────────────────────────────────────────────
 
 type Els = ReturnType<EngineInterface['ui']['resolve']>
+/** The app surfaces (desktop, VS Code, mobile): proportional text, a light or dark page, and vector art. */
+type Gfx = Extract<Els, { Svg: unknown }>
+
+// by the surface: the terminal's table answers any element name, drawing an unknown one as a fragment
+const isGfx = (E: Els, v: View): E is Gfx => v.gfx
 
 type View = {
   f: number
@@ -584,9 +589,14 @@ type View = {
   t: Theme
   /** animation 'off': every state drawn still, no moves between them */
   still: boolean
+  /** drawn on an app surface rather than a terminal */
+  gfx: boolean
+  /** body and secondary text: the theme's own on the terminal, the app's theme keys elsewhere, so a light page keeps them readable */
+  ink: string
+  mute: string
 }
 
-async function view($: EngineInterface): Promise<View> {
+async function view($: EngineInterface, surface: string): Promise<View> {
   const [f, at, u, b, s, ag, pe, ti, m] = await Promise.all([
     read($, frame),
     read($, now),
@@ -598,14 +608,86 @@ async function view($: EngineInterface): Promise<View> {
     read($, themeIdx),
     read($, motionAtom),
   ])
-  return { f, at, u, b, s, ag, pe, t: themeOf(ti), still: m === 'off' }
+  const t = themeOf(ti)
+  const gfx = surface !== 'terminal'
+  return { f, at, u, b, s, ag, pe, t, still: m === 'off', gfx, ink: gfx ? 'text' : t.text, mute: gfx ? 'inactive' : MUTED }
+}
+
+// ── Vector art for the app surfaces, where block glyphs leave gaps between lines ──
+
+/** CSS pixels per terminal cell: keeps a bar as long, relative to the text, as on the terminal. */
+const PX = 7
+const AVATAR_PX = 4
+
+/** The bar's colors: the theme's, turning amber then red as it fills. */
+function barStops(pct: number, v: View): string[] {
+  return pct >= 85 ? [WARN, HOT] : pct >= 60 ? [v.t.stops[0]!, WARN] : v.t.stops
+}
+
+/** A rounded gradient bar; `glint` is the frame of the light running along it, or -1. */
+function barSvg(pct: number, w: number, stops: string[], glint: number): string {
+  const h = 8
+  const fill = Math.round((Math.max(0, Math.min(100, pct)) / 100) * w)
+  const grad = stops.map((c, i) => `<stop offset="${stops.length < 2 ? 0 : i / (stops.length - 1)}" stop-color="${c}"/>`).join('')
+  const light = glint >= 0 && fill > 12 ? `<rect x="${((glint * 9) % (fill + 16)) - 12}" width="12" height="${h}" fill="#FFFFFF" fill-opacity="0.35"/>` : ''
+  const bar = fill > 0 ? `<g clip-path="url(#c)"><rect width="${w}" height="${h}" fill="url(#g)"/>${light}</g>` : ''
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<defs><linearGradient id="g" x1="0" x2="${w}" y1="0" y2="0" gradientUnits="userSpaceOnUse">${grad}</linearGradient>` +
+    `<clipPath id="c"><rect width="${fill}" height="${h}" rx="${h / 2}"/></clipPath></defs>` +
+    `<rect width="${w}" height="${h}" rx="${h / 2}" fill="${MUTED}" fill-opacity="0.25"/>${bar}</svg>`
+  )
+}
+
+function avatarSvg(px: string[], paint: (code: string) => string | undefined): string {
+  const rects: string[] = []
+  px.forEach((row, y) =>
+    [...row].forEach((code, x) => {
+      const c = paint(code)
+      if (c) rects.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${c}"/>`)
+    }),
+  )
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_W * AVATAR_PX}" height="${AVATAR_H * AVATAR_PX}" viewBox="0 0 ${AVATAR_W} ${AVATAR_H}" shape-rendering="crispEdges">${rects.join('')}</svg>`
+}
+
+/**
+ * A row with a bar in it. The terminal keeps it one Text (sibling Texts in a row Box wrap
+ * into columns there) and draws the bar in block glyphs; the app surfaces lay it out as a
+ * row and draw the bar as vector art.
+ */
+function BarRow(E: Els, v: View, pct: number, width: number, before: RenderElement | null, after: RenderElement | null, stops = barStops(pct, v)) {
+  if (isGfx(E, v)) {
+    const { Box, Svg } = E
+    return (
+      <Box flexDirection="row" alignItems="center" gap="xs">
+        {before}
+        <Svg source={barSvg(pct, width * PX, stops, v.s.working && !v.still ? v.f : -1)} alt={`${Math.round(pct)}%`} width={width * PX} height={8} />
+        {after}
+      </Box>
+    )
+  }
+  const { Text } = E
+  return (
+    <Text wrap="truncate-end">
+      {before}
+      {GradBar(E, pct, width, v, v.s.working, stops)}
+      {after}
+    </Text>
+  )
 }
 
 const PARTIAL = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
 
-/** Text with a gradient that shifts with the frame. */
+/** Text with a gradient that shifts with the frame (one color on the app surfaces, where it would be a node per letter on every frame). */
 function Grad(E: Els, text: string, v: View) {
   const { Text } = E
+  if (isGfx(E, v)) {
+    return (
+      <Text weight="semibold" size="caption" color={v.t.stops[1]}>
+        {text}
+      </Text>
+    )
+  }
   const chars = [...text]
   return (
     <Text bold>
@@ -617,18 +699,17 @@ function Grad(E: Els, text: string, v: View) {
 }
 
 /** A gradient bar with 1/8-cell precision and a glint running along it. */
-function GradBar(E: Els, pct: number, width: number, v: View, shimmer: boolean) {
+function GradBar(E: Els, pct: number, width: number, v: View, shimmer: boolean, stops = barStops(pct, v)) {
   const { Text } = E
   const clamped = Math.max(0, Math.min(100, pct))
   const exact = (clamped / 100) * width
   const full = Math.floor(exact)
   const part = PARTIAL[Math.floor((exact - full) * 8)] ?? ''
-  const stops = clamped >= 85 ? [WARN, HOT] : clamped >= 60 ? [v.t.stops[0]!, WARN] : v.t.stops
   const glow = shimmer ? v.f % (full + 6) : -1
   const at = (i: number) => lerp(stops, width <= 1 ? 0 : i / (width - 1))
   const cells = []
   for (let i = 0; i < full; i += 1) {
-    cells.push(<Text color={i === glow ? v.t.text : at(i)}>█</Text>)
+    cells.push(<Text color={i === glow ? v.ink : at(i)}>█</Text>)
   }
   if (part) {
     cells.push(
@@ -648,8 +729,16 @@ function GradBar(E: Els, pct: number, width: number, v: View, shimmer: boolean) 
 
 function Chip(E: Els, label: string, v: View, color?: string) {
   const { Text } = E
+  // a dark chip would sit heavy on a light page: the app surfaces get the figure in semibold
+  if (isGfx(E, v)) {
+    return (
+      <Text color={color ?? v.ink} weight="semibold" tabular>
+        {label}
+      </Text>
+    )
+  }
   return (
-    <Text backgroundColor={v.t.chip} color={color ?? v.t.text} bold>
+    <Text backgroundColor={v.t.chip} color={color ?? v.ink} bold>
       {` ${label} `}
     </Text>
   )
@@ -663,13 +752,15 @@ function DoneBadge(E: Els, v: View) {
   if (!v.s.isReady || v.s.working) return null
   // the prompt is free, but background agents may still be at work
   const running = v.ag.filter(isLive).length
+  // the half-block caps round the pill on a terminal; in a proportional face they misalign
+  const cap = isGfx(E, v) ? ' ' : ''
   return (
     <Text>
-      <Text color={OK}>▐</Text>
+      {cap ? null : <Text color={OK}>▐</Text>}
       <Text backgroundColor={OK} color="#10241A" bold>
-        ✔ DONE
+        {cap}✔ DONE{cap}
       </Text>
-      <Text color={OK}>▌</Text>
+      {cap ? null : <Text color={OK}>▌</Text>}
       {running > 0 ? (
         <Text color={WARN}>
           {' '}
@@ -682,6 +773,20 @@ function DoneBadge(E: Els, v: View) {
   )
 }
 
+/** A bar's figure: the percent in its status color, then any suffix. */
+function Pct(E: Els, v: View, pct: number, suffix?: string) {
+  const { Text } = E
+  return (
+    <Text>
+      <Text bold tabular color={statusColor(pct)}>
+        {' '}
+        {Math.round(pct)}%
+      </Text>
+      {suffix ? <Text color={v.mute}>{suffix}</Text> : null}
+    </Text>
+  )
+}
+
 function Gauge(E: Els, label: string, pct: number, width: number, v: View, suffix?: string) {
   const { Text } = E
   return (
@@ -690,7 +795,7 @@ function Gauge(E: Els, label: string, pct: number, width: number, v: View, suffi
       <Text> </Text>
       {GradBar(E, pct, width, v, v.s.working)}
       <Text bold color={statusColor(pct)}> {String(Math.round(pct)).padStart(2, ' ')}%</Text>
-      {suffix ? <Text color={MUTED}>{suffix}</Text> : null}
+      {suffix ? <Text color={v.mute}>{suffix}</Text> : null}
     </Text>
   )
 }
@@ -699,6 +804,10 @@ function Gauge(E: Els, label: string, pct: number, width: number, v: View, suffi
 function Avatar(E: Els, v: View) {
   const [dark, mid, light] = v.t.stops
   const paint: Record<string, string> = { a: light!, b: mid!, c: dark!, k: v.t.chip, w: '#FFF6EE', s: light!, n: light!, d: '#6C9BC8' }
+  if (isGfx(E, v)) {
+    const { Svg } = E
+    return <Svg source={avatarSvg(avatarPixels(v), code => paint[code])} alt="Spark HUD mascot" width={AVATAR_W * AVATAR_PX} height={AVATAR_H * AVATAR_PX} />
+  }
   return PixelArt(E, avatarPixels(v), code => paint[code])
 }
 
@@ -719,6 +828,17 @@ function withAvatar(E: Els, v: View, cols: number, draw: (w: number) => RenderEl
 /** A separator line with an animated gradient and an inset title. */
 function Rule(E: Els, cols: number, v: View, title: string, right: string) {
   const { Text } = E
+  // box-drawing lines do not meet in a proportional face: the app surfaces get the title alone
+  if (isGfx(E, v)) {
+    return (
+      <Text wrap="truncate-end" size="caption">
+        <Text weight="semibold" color={v.t.stops[1]}>
+          {title}
+        </Text>
+        {right ? <Text color={v.mute}> · {right}</Text> : null}
+      </Text>
+    )
+  }
   const head = `──╼ ${title} ╾`
   const tail = right ? `╼ ${right} ╾──` : '──'
   const fill = Math.max(2, cols - [...head].length - [...tail].length)
@@ -785,7 +905,7 @@ function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface, 
   const isRunning = a.status === 'running' || a.status === 'pending'
   const isBad = a.status === 'failed' || a.status === 'killed'
   const icon = isRunning ? SPIN[(v.f + i) % SPIN.length] : a.status === 'completed' ? '✔' : isBad ? '✘' : '◦'
-  const tint = v.t.stops[i % v.t.stops.length] ?? v.t.text
+  const tint = v.t.stops[i % v.t.stops.length] ?? v.ink
   const name = a.name || a.type
   const meta = ` ${a.tools}⚒${isRunning ? ` ${fmtDur(v.at - a.startedAt)}` : ''} ⤢`
   // A Button's Text children wrap rather than truncate, so the line is cut to the row here.
@@ -795,13 +915,13 @@ function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface, 
   const act = a.lastAction ? clip(` → ${a.lastAction}`, left) : ''
   return (
     <Button key={`agent-${a.id}`} plain label={`${name} ${a.description}`} onPress={() => void openViewer($, a.id)}>
-      <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : MUTED}> {icon} </Text>
+      <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : v.mute}> {icon} </Text>
       <Text bold color={tint}>
         {name}
       </Text>
-      <Text color={MUTED}>{meta}</Text>
-      {desc ? <Text color={MUTED}>{desc}</Text> : null}
-      {act ? <Text color={v.t.text}>{act}</Text> : null}
+      <Text color={v.mute}>{meta}</Text>
+      {desc ? <Text color={v.mute}>{desc}</Text> : null}
+      {act ? <Text color={v.ink}>{act}</Text> : null}
     </Button>
   )
 }
@@ -809,18 +929,18 @@ function AgentLine(E: Els, a: HudAgent, v: View, i: number, $: EngineInterface, 
 function PeerLine(E: Els, p: HudPeer, v: View, i: number) {
   const { Text } = E
   const isStale = v.at - p.updatedAt > 45_000
-  const tint = v.t.stops[(i + 1) % v.t.stops.length] ?? v.t.text
+  const tint = v.t.stops[(i + 1) % v.t.stops.length] ?? v.ink
   return (
     <Text wrap="truncate-end">
-      <Text color={p.working ? tint : MUTED}> {p.working ? SPIN[(v.f + i * 2) % SPIN.length] : '◦'} </Text>
+      <Text color={p.working ? tint : v.mute}> {p.working ? SPIN[(v.f + i * 2) % SPIN.length] : '◦'} </Text>
       <Text bold color={tint}>
         {p.project}
       </Text>
-      <Text color={MUTED}> · {p.model}</Text>
+      <Text color={v.mute}> · {p.model}</Text>
       {p.ctxPercent !== undefined ? <Text color={statusColor(p.ctxPercent)}> ctx {p.ctxPercent}%</Text> : null}
-      {p.agentsRunning > 0 ? <Text color={v.t.text}> · {p.agentsRunning} {p.agentsRunning === 1 ? "agent" : "agents"}</Text> : null}
-      {p.activity ? <Text color={v.t.text}> → {p.activity}</Text> : null}
-      {isStale ? <Text color={MUTED}> (no signal {fmtDur(v.at - p.updatedAt)})</Text> : null}
+      {p.agentsRunning > 0 ? <Text color={v.ink}> · {p.agentsRunning} {p.agentsRunning === 1 ? "agent" : "agents"}</Text> : null}
+      {p.activity ? <Text color={v.ink}> → {p.activity}</Text> : null}
+      {isStale ? <Text color={v.mute}> (no signal {fmtDur(v.at - p.updatedAt)})</Text> : null}
     </Text>
   )
 }
@@ -830,7 +950,7 @@ function Header(E: Els, text: string, v: View, count?: string) {
   return (
     <Text>
       {Grad(E, `◆ ${text}`, v)}
-      {count ? <Text color={MUTED}> {count}</Text> : null}
+      {count ? <Text color={v.mute}> {count}</Text> : null}
     </Text>
   )
 }
@@ -855,16 +975,27 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
   const busyPeers = v.pe.filter(p => p.working).length
   const fiveReset = five ? pace(five, v.at).resetIn : undefined
   const model = (v.u?.model || '…').replace(/^claude-/, '')
+  const ctxSuffix = v.u?.ctxTokens !== undefined && cols >= 100 ? `  ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : ''
+  const fiveSuffix = fiveReset !== undefined && cols >= 110 ? `  ↻ ${fmtReset(fiveReset)}` : ''
+  const gfx = isGfx(E, v)
 
   return (
-    <Box flexDirection="column">
-      {rows >= 3 ? Rule(E, cols, v, 'SPARK HUD', v.t.name) : null}
+    <Box flexDirection="column" gap={gfx ? 'xs' : 0}>
+      {/* the app's band has a frame of its own: the rules are the terminal's */}
+      {rows >= 3 && !gfx ? Rule(E, cols, v, 'SPARK HUD', v.t.name) : null}
+      {rows >= 2 && gfx ? (
+        <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="xs">
+          {BarRow(E, v, ctxPct, barW, Chip(E, 'CTX', v), Pct(E, v, ctxPct, ctxSuffix))}
+          {five ? BarRow(E, v, five.percentUsed, barW, Chip(E, '5H', v), Pct(E, v, five.percentUsed, fiveSuffix)) : null}
+          {week && cols >= 85 ? BarRow(E, v, week.percentUsed, Math.max(3, barW - 3), Chip(E, '7D', v), Pct(E, v, week.percentUsed)) : null}
+        </Box>
+      ) : null}
       {/* one Text per row: sibling Texts in a row Box wrap into columns once the band narrows */}
-      {rows >= 2 ? (
+      {rows >= 2 && !gfx ? (
       <Text wrap="truncate-end">
-        {Gauge(E, 'CTX', ctxPct, barW, v, v.u?.ctxTokens !== undefined && cols >= 100 ? `  ${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : '')}
+        {Gauge(E, 'CTX', ctxPct, barW, v, ctxSuffix)}
         {five ? <Text>{'  '}</Text> : null}
-        {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveReset !== undefined && cols >= 110 ? `  ↻ ${fmtReset(fiveReset)}` : '') : null}
+        {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveSuffix) : null}
         {week && cols >= 85 ? <Text>{'  '}</Text> : null}
         {week && cols >= 85 ? Gauge(E, '7D', week.percentUsed, Math.max(3, barW - 3), v) : null}
       </Text>
@@ -877,32 +1008,32 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
             <Text color={v.t.stops[1]} bold>
               ⬢{' '}
             </Text>
-            <Text color={v.t.text}>{model}</Text>
+            <Text color={v.ink}>{model}</Text>
             <Text color={v.t.stops[2]} bold>
               {'  $ '}
             </Text>
-            <Text color={v.t.text}>{fmtUsd(v.u?.costUsd).replace('$', '')}</Text>
-            <Text color={running > 0 ? v.t.stops[2] : MUTED} bold>
+            <Text color={v.ink}>{fmtUsd(v.u?.costUsd).replace('$', '')}</Text>
+            <Text color={running > 0 ? v.t.stops[2] : v.mute} bold>
               {'  '}
               {running > 0 ? SPIN[v.f % SPIN.length] : '⚙'}{' '}
             </Text>
-            <Text color={v.t.text}>
+            <Text color={v.ink}>
               {running}/{v.ag.length} agents
             </Text>
             {v.pe.length > 0 ? (
               <Text>
-                <Text color={busyPeers > 0 ? v.t.stops[0] : MUTED} bold>
+                <Text color={busyPeers > 0 ? v.t.stops[0] : v.mute} bold>
                   {'  ◫ '}
                 </Text>
-                <Text color={v.t.text}>
+                <Text color={v.ink}>
                   {v.pe.length} win{busyPeers > 0 ? ` · ${busyPeers}▶` : ''}
                 </Text>
               </Text>
             ) : null}
             {v.s.working && v.s.lastAction ? (
-              <Text color={MUTED}>
+              <Text color={v.mute}>
                 {'  → '}
-                <Text color={v.t.text}>{v.s.lastAction}</Text>
+                <Text color={v.ink}>{v.s.lastAction}</Text>
               </Text>
             ) : null}
           </Text>
@@ -911,7 +1042,7 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
           <Button key="toggle" plain label="▾ more" onPress={onToggle} />
         </Box>
       </Box>
-      {rows >= 4 ? Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '') : null}
+      {rows >= 4 && !gfx ? Rule(E, cols, v, `${v.s.turns} turns · ${fmtDur(v.at - v.s.startedAt)}`, '') : null}
     </Box>
   )
 }
@@ -956,8 +1087,8 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
             <Box flexGrow={1} flexShrink={1}>
               <Text wrap="truncate-end">
                 {DoneBadge(E, v)}
-                <Text color={v.t.text}>{v.u?.model || '…'}</Text>
-                <Text color={MUTED}>
+                <Text color={v.ink}>{v.u?.model || '…'}</Text>
+                <Text color={v.mute}>
                   {' '}
                   · session {fmtDur(v.at - v.s.startedAt)} · {v.s.turns} turns
                 </Text>
@@ -970,58 +1101,78 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
             </Box>
           </Box>
           {Header(E, 'CONTEXT WINDOW', v)}
-          <Text wrap="truncate-end">
-            <Text>{'  '}</Text>
-            {GradBar(E, ctxPct, Math.max(8, Math.min(bigW, w - 48)), v, v.s.working)}
-            <Text bold color={statusColor(ctxPct)}>
-              {' '}
-              {ctxPct}%
-            </Text>
-            <Text color={v.t.text}>
-              {'  '}
-              {fmtTokens(v.u?.ctxTokens)} / {fmtTokens(v.u?.ctxWindow)}
-            </Text>
-            <Text color={MUTED}>
-              {v.b?.autoCompactAt ? `  · autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? '  · autocompact OFF' : ''}
-            </Text>
-          </Text>
+          {BarRow(
+            E,
+            v,
+            ctxPct,
+            Math.max(8, Math.min(bigW, w - 48)),
+            <Text>{'  '}</Text>,
+            <Text>
+              <Text bold tabular color={statusColor(ctxPct)}>
+                {' '}
+                {ctxPct}%
+              </Text>
+              <Text color={v.ink}>
+                {'  '}
+                {fmtTokens(v.u?.ctxTokens)} / {fmtTokens(v.u?.ctxWindow)}
+              </Text>
+              <Text color={v.mute}>
+                {v.b?.autoCompactAt ? `  · autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? '  · autocompact OFF' : ''}
+              </Text>
+            </Text>,
+          )}
         </Box>
       ))}
       {used.slice(0, Math.max(0, catRows)).map((c, i) => {
         const w = 14
         const n = Math.max(1, Math.round((c.tokens / catMax) * w))
+        const tint = v.t.stops[i % v.t.stops.length]!
+        if (isGfx(E, v)) {
+          const after = (
+            <Text>
+              <Text color={v.ink} tabular>
+                {' '}
+                {fmtTokens(c.tokens)}{' '}
+              </Text>
+              <Text color={v.mute}>{c.name}</Text>
+            </Text>
+          )
+          return BarRow(E, v, (c.tokens / catMax) * 100, w, <Text>{'    '}</Text>, after, [tint])
+        }
         return (
           <Text wrap="truncate-end">
             <Text>{'    '}</Text>
             <Text color={v.t.stops[i % v.t.stops.length]}>{'▮'.repeat(n)}</Text>
             <Text color={TRACK}>{'▮'.repeat(w - n)}</Text>
-            <Text color={v.t.text}> {fmtTokens(c.tokens).padStart(5, ' ')} </Text>
-            <Text color={MUTED}>{c.name}</Text>
+            <Text color={v.ink}> {fmtTokens(c.tokens).padStart(5, ' ')} </Text>
+            <Text color={v.mute}>{c.name}</Text>
           </Text>
         )
       })}
 
       {limitRows >= 0 ? Header(E, 'PLAN LIMITS', v) : null}
-      {limitRows >= 0 && limits.length === 0 ? <Text color={MUTED} wrap="truncate-end">  None yet: they arrive with the next reply (API-key sessions have none).</Text> : null}
+      {limitRows >= 0 && limits.length === 0 ? <Text color={v.mute} wrap="truncate-end">  None yet: they arrive with the next reply (API-key sessions have none).</Text> : null}
       {limits.slice(0, Math.max(0, limitRows)).map(l => {
         const p = pace(l, v.at)
         const diff = (p.expected !== undefined || p.isOut) && withPace ? l.percentUsed - (p.expected ?? 100) : undefined
+        const label = clip(limitLabel(l.kind).toUpperCase(), 9)
+        // spaces line the bars up in a monospaced face only: the app surfaces get a fixed-width label box
+        const before = isGfx(E, v) ? (
+          <Box width={12} paddingLeft={2} flexShrink={0}>
+            {Chip(E, label, v)}
+          </Box>
+        ) : (
+          <Text>
+            {'  '}
+            {Chip(E, label.padEnd(9, ' '), v)}{' '}
+          </Text>
+        )
         return (
           <Box flexDirection="column">
-            <Text wrap="truncate-end">
-              <Text>{'  '}</Text>
-              {Chip(E, clip(limitLabel(l.kind).toUpperCase(), 9).padEnd(9, ' '), v)}
-              <Text> </Text>
-              {GradBar(E, l.percentUsed, bigW, v, v.s.working)}
-              <Text bold color={statusColor(l.percentUsed)}>
-                {' '}
-                {Math.round(l.percentUsed)}%
-              </Text>
-              {p.resetIn !== undefined ? <Text color={MUTED}>  ↻ {fmtReset(p.resetIn)}</Text> : null}
-            </Text>
+            {BarRow(E, v, l.percentUsed, bigW, before, Pct(E, v, l.percentUsed, p.resetIn !== undefined ? `  ↻ ${fmtReset(p.resetIn)}` : ''))}
             {diff !== undefined ? (
               <Text wrap="truncate-end">
-                <Text color={MUTED}>{'              pace '}</Text>
+                <Text color={v.mute}>{'              pace '}</Text>
                 {p.isOut ? (
                   <Text color={HOT} bold>
                     ■ limit reached, back in {fmtDur(p.resetIn ?? NaN)}
@@ -1051,26 +1202,26 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
         <Text>{'  '}</Text>
         {Chip(E, `⏱ ${v.s.lastTurnMs !== undefined ? `${fmtDur(v.s.lastTurnMs)}/${v.s.lastTurnTools}⚒` : '—'}`, v)}
         <Text>{'  '}</Text>
-        {Chip(E, `cache ${cacheHit === undefined ? '—' : `${cacheHit}%`}`, v, cacheHit === undefined ? v.t.text : statusColor(100 - cacheHit))}
+        {Chip(E, `cache ${cacheHit === undefined ? '—' : `${cacheHit}%`}`, v, cacheHit === undefined ? v.ink : statusColor(100 - cacheHit))}
         <Text>{'  '}</Text>
         {Chip(E, `out ${fmtTokens(v.s.output)}`, v)}
       </Text>
       ) : null}
       {sessionRows >= 2 ? (
         <Text wrap="truncate-end">
-          <Text color={MUTED}>  now </Text>
-          <Text color={v.t.text}>{v.s.lastAction}</Text>
-          <Text color={MUTED}> ({fmtDur(v.at - v.s.turnStartedAt)})</Text>
+          <Text color={v.mute}>  now </Text>
+          <Text color={v.ink}>{v.s.lastAction}</Text>
+          <Text color={v.mute}> ({fmtDur(v.at - v.s.turnStartedAt)})</Text>
         </Text>
       ) : null}
 
       {agentRows >= 0 ? Header(E, 'AGENTS', v, `${running.length} active / ${v.ag.length}`) : null}
-      {agentRows >= 0 && v.ag.length === 0 ? <Text color={MUTED} wrap="truncate-end">  None in this session.</Text> : null}
+      {agentRows >= 0 && v.ag.length === 0 ? <Text color={v.mute} wrap="truncate-end">  None in this session.</Text> : null}
       {shownAgents.map((a, i) => AgentLine(E, a, v, i, $, cols))}
-      {agentRows >= 1 && v.ag.length > shownAgents.length ? <Text color={MUTED} wrap="truncate-end">  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
+      {agentRows >= 1 && v.ag.length > shownAgents.length ? <Text color={v.mute} wrap="truncate-end">  … {v.ag.length - shownAgents.length} more in ◫ panel</Text> : null}
 
       {peerRows >= 0 ? Header(E, 'OTHER WINDOWS', v, `${v.pe.length}`) : null}
-      {peerRows >= 0 && v.pe.length === 0 ? <Text color={MUTED} wrap="truncate-end">  No other session running spark-hud.</Text> : null}
+      {peerRows >= 0 && v.pe.length === 0 ? <Text color={v.mute} wrap="truncate-end">  No other session running spark-hud.</Text> : null}
       {v.pe.slice(0, Math.max(0, peerRows)).map((p, i) => PeerLine(E, p, v, i))}
 
       {tipRows >= 0 ? Header(E, 'TIPS', v) : null}
@@ -1134,7 +1285,7 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
     return (
       <Box flexDirection="column">
         {Rule(E, cols, v, 'AGENT VIEWER', v.t.name)}
-        <Text color={MUTED} wrap="truncate-end">
+        <Text color={v.mute} wrap="truncate-end">
           {v.ag.length === 0 ? '  No agents yet in this session: they show up here once Claude starts one.' : '  Pick an agent:'}
         </Text>
         {v.ag.map((x, i) => AgentLine(E, x, v, i, $, cols))}
@@ -1151,7 +1302,7 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
   const body = rows.filter(r => r.kind !== 'task')
   const room = Math.max(4, rowsAvail - 7)
   const shown = body.slice(-room)
-  const tint = v.t.stops[idx % v.t.stops.length] ?? v.t.text
+  const tint = v.t.stops[idx % v.t.stops.length] ?? v.ink
 
   return (
     <Box flexDirection="column">
@@ -1159,11 +1310,11 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
       <Box flexDirection="row" gap={2}>
         <Box flexGrow={1} flexShrink={1}>
           <Text wrap="truncate-end">
-            <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : MUTED} bold>
+            <Text color={isRunning ? tint : a.status === 'completed' ? OK : isBad ? HOT : v.mute} bold>
               {isRunning ? SPIN[v.f % SPIN.length] : a.status === 'completed' ? '✔' : isBad ? '✘' : '◦'}{' '}
             </Text>
             <Text bold color={tint}>{a.type}</Text>
-            {a.description ? <Text color={MUTED}> · {a.description}</Text> : null}
+            {a.description ? <Text color={v.mute}> · {a.description}</Text> : null}
           </Text>
         </Box>
         {/* the pane's frame draws its own ✕, and Esc closes it */}
@@ -1179,7 +1330,7 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
         <Text> </Text>
         {Chip(E, `⏱ ${fmtDur((isRunning ? v.at : a.updatedAt) - a.startedAt)}`, v)}
         <Text> </Text>
-        {Chip(E, `ctx ${fmtTokens(a.ctxTokens)}${ctxPct !== undefined ? ` · ${ctxPct}%` : ''}`, v, ctxPct === undefined ? v.t.text : statusColor(ctxPct))}
+        {Chip(E, `ctx ${fmtTokens(a.ctxTokens)}${ctxPct !== undefined ? ` · ${ctxPct}%` : ''}`, v, ctxPct === undefined ? v.ink : statusColor(ctxPct))}
         {a.model ? (
           <Text>
             <Text> </Text>
@@ -1190,16 +1341,16 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
       {task ? (
         <Text wrap="truncate-end">
           <Text color={v.t.stops[1]} bold>{'  task '}</Text>
-          <Text color={v.t.text}>{firstLine(task.text, 400)}</Text>
+          <Text color={v.ink}>{firstLine(task.text, 400)}</Text>
         </Text>
       ) : null}
-      {body.length > shown.length ? <Text color={MUTED} wrap="truncate-end">  … {body.length - shown.length} earlier steps</Text> : null}
-      {shown.length === 0 ? <Text color={MUTED} wrap="truncate-end">  {isRunning ? 'Waiting for the first step…' : 'No transcript available for this agent.'}</Text> : null}
+      {body.length > shown.length ? <Text color={v.mute} wrap="truncate-end">  … {body.length - shown.length} earlier steps</Text> : null}
+      {shown.length === 0 ? <Text color={v.mute} wrap="truncate-end">  {isRunning ? 'Waiting for the first step…' : 'No transcript available for this agent.'}</Text> : null}
       {shown.map((r, i) =>
         r.kind === 'text' ? (
           <Text wrap="truncate-end">
             <Text color={tint}>{'  ✻ '}</Text>
-            <Text color={v.t.text}>{firstLine(r.text, 400)}</Text>
+            <Text color={v.ink}>{firstLine(r.text, 400)}</Text>
           </Text>
         ) : (
           <Text wrap="truncate-end">
@@ -1207,8 +1358,8 @@ function ViewerBody(E: Els, v: View, cols: number, rowsAvail: number, $: EngineI
               {'  '}
               {r.isPending ? SPIN[(v.f + i) % SPIN.length] : r.isError ? '✘' : '⚒'}{' '}
             </Text>
-            <Text color={v.t.text} bold>{r.text}</Text>
-            {r.detail ? <Text color={r.isError ? HOT : MUTED}>  {r.detail}</Text> : null}
+            <Text color={v.ink} bold>{r.text}</Text>
+            {r.detail ? <Text color={r.isError ? HOT : v.mute}>  {r.detail}</Text> : null}
           </Text>
         ),
       )}
@@ -1459,7 +1610,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const E = $.ui.resolve(e)
-    const v = await view($)
+    const v = await view($, e.surface)
     const cols = e.props.bodyColumns
     const columns = e.viewport?.columns
     const onToggle = () => void toggle($, columns)
@@ -1470,7 +1621,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: VIEWER }, async ($, e) => {
     const E = $.ui.resolve(e)
-    const v = await view($)
+    const v = await view($, e.surface)
     const [id, rows] = await Promise.all([read($, viewerAgent), read($, viewerRows)])
     return ViewerBody(E, v, e.props.bodyColumns, e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24, $, id, rows)
   })
@@ -1478,7 +1629,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const E = $.ui.resolve(e)
     const { Box, Text } = E
-    const v = await view($)
+    const v = await view($, e.surface)
     const cols = e.props.bodyColumns
     return (
       <Box flexDirection="column">

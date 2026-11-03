@@ -73,9 +73,14 @@ test('desktop surface draws every view', async ($, on) => {
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 30, bodyColumns: 100, scroll: SCROLL, view: {} },
     })
-    await band.drawn()
+    // the app draws the mascot and the bars as vector art, with no block or box-drawing glyphs
+    // (a proportional face leaves gaps between their lines)
+    const glyphs = /[▀▄█▏▎▍▌▋▊▉▮─╼╾]/
+    expect(glyphs.test(JSON.stringify(await band.drawn()))).toBe(surface === 'terminal')
+    expect((await band.findAll({ type: 'Svg' })).length).toBe(surface === 'desktop' ? 3 : 0)
     await band.press({ key: 'toggle' })
-    await band.drawn()
+    expect(glyphs.test(JSON.stringify(await band.drawn()))).toBe(surface === 'terminal')
+    expect((await band.findAll({ type: 'Svg' })).length).toBe(surface === 'desktop' ? 3 : 0)
     await band.press({ key: 'panel' })
     for (const id of ['spark-hud-panel', 'spark-hud-agent']) {
       const pane = await $.ui.mount({

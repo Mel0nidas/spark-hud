@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+Built for the Claude desktop app as well as the terminal.
+
+- **Native drawing in the desktop app.** The app draws text in a proportional face, where block and box-drawing characters leave gaps and do not line up. There the mascot and every bar (context, plan limits, context breakdown) are now vector art, with the same gradients, glint and animation; the frame lines become a plain title.
+- **Readable in the app's light theme.** Body and secondary text follow the app's own theme colors instead of the terminal palette's light grey; the dark chips become semibold figures.
+- **Lighter on the app.** Gradient titles and rules were one styled node per letter, sent again on every frame; in the app each is now one node.
+- The gauges wrap onto a second line when the app window is narrow, and the plan-limit bars line up in a fixed-width label column.
+- The terminal looks and works exactly as before.
+
 ## 0.5.0
 
 Privacy and footprint, after a review that flagged what 0.4 wrote to disk.
