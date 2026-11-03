@@ -5,6 +5,8 @@ import type { HudAgent, HudBreakdown, HudLimit, HudPeer, HudStats, HudUsage, Hud
 
 // ── State ────────────────────────────────────────────────────────────────
 
+const HOUR_MS = 3600_000
+
 const INITIAL_STATS: HudStats = {
   startedAt: 0,
   turns: 0,
@@ -33,6 +35,7 @@ const viewerAgent = atom({ plugin: 'spark-hud', key: 'viewerAgent' } as const, n
 const viewerRows = atom({ plugin: 'spark-hud', key: 'viewerRows' } as const, [])
 const stats = atom({ plugin: 'spark-hud', key: 'stats' } as const, INITIAL_STATS)
 const motionAtom = atom({ plugin: 'spark-hud', key: 'motion' } as const, 'full')
+const cacheTtl = atom({ plugin: 'spark-hud', key: 'cacheTtl' } as const, HOUR_MS)
 
 const PANE = 'spark-hud-panel'
 const VIEWER = 'spark-hud-agent'
@@ -589,6 +592,8 @@ type View = {
   t: Theme
   /** animation 'off': every state drawn still, no moves between them */
   still: boolean
+  /** the prompt cache's lifetime, ms */
+  ttl: number
   /** drawn on an app surface rather than a terminal */
   gfx: boolean
   /** body and secondary text: the theme's own on the terminal, the app's theme keys elsewhere, so a light page keeps them readable */
@@ -597,7 +602,7 @@ type View = {
 }
 
 async function view($: EngineInterface, surface: string): Promise<View> {
-  const [f, at, u, b, s, ag, pe, ti, m] = await Promise.all([
+  const [f, at, u, b, s, ag, pe, ti, m, ttl] = await Promise.all([
     read($, frame),
     read($, now),
     read($, usage),
@@ -607,10 +612,11 @@ async function view($: EngineInterface, surface: string): Promise<View> {
     read($, peers),
     read($, themeIdx),
     read($, motionAtom),
+    read($, cacheTtl),
   ])
   const t = themeOf(ti)
   const gfx = surface !== 'terminal'
-  return { f, at, u, b, s, ag, pe, t, still: m === 'off', gfx, ink: gfx ? 'text' : t.text, mute: gfx ? 'inactive' : MUTED }
+  return { f, at, u, b, s, ag, pe, t, ttl, still: m === 'off', gfx, ink: gfx ? 'text' : t.text, mute: gfx ? 'inactive' : MUTED }
 }
 
 // ── Vector art for the app surfaces, where block glyphs leave gaps between lines ──
@@ -955,6 +961,92 @@ function Header(E: Els, text: string, v: View, count?: string) {
   )
 }
 
+// ── Prompt cache temperature ──────────────────────────────────────────────
+//
+// Each reply leaves the conversation in the prompt cache for its lifetime (the cacheTtl
+// setting). While warm, the next message reads the context at a tenth of the input price;
+// once cold, it writes it all again at 1.25x, about 12x as much, all of it from the limits.
+
+/** Cold to hot along the bar: as it drains, what is left runs from amber to blue. */
+const HEAT = ['#6C9BC8', '#D9A441', '#E0703A']
+
+type Heat = { pct: number; left: number; isLive: boolean }
+
+/** How warm the cache is now; undefined before the first reply. */
+function heat(v: View): Heat | undefined {
+  if (v.s.working) return { pct: 100, left: v.ttl, isLive: true }
+  if (v.s.warmAt === undefined) return undefined
+  const left = Math.max(0, v.s.warmAt + v.ttl - v.at)
+  return { pct: (left / v.ttl) * 100, left, isLive: false }
+}
+
+function heatColor(pct: number): string {
+  return pct > 50 ? HEAT[2]! : pct > 15 ? HEAT[1]! : HEAT[0]!
+}
+
+/** Time left warm, rounded up: '60m', '9m', '40s'. */
+function fmtLeft(ms: number): string {
+  return ms >= 60_000 ? `${Math.ceil(ms / 60_000)}m` : `${Math.ceil(ms / 1000)}s`
+}
+
+function heatLabel(hn: Heat | undefined): string {
+  return !hn ? '—' : hn.isLive ? 'warm' : hn.left === 0 ? 'cold' : fmtLeft(hn.left)
+}
+
+function TempGauge(E: Els, v: View, width: number) {
+  const { Text } = E
+  const hn = heat(v)
+  const fig = (
+    <Text bold tabular color={hn ? heatColor(hn.pct) : v.mute}>
+      {' '}
+      {heatLabel(hn)}
+    </Text>
+  )
+  if (isGfx(E, v)) return BarRow(E, v, hn?.pct ?? 0, width, Chip(E, 'TEMP', v), fig, HEAT)
+  return (
+    <Text>
+      {Chip(E, 'TEMP', v)}
+      <Text> </Text>
+      {GradBar(E, hn?.pct ?? 0, width, v, v.s.working, HEAT)}
+      {fig}
+    </Text>
+  )
+}
+
+/** The expanded view's TEMP row: the gauge, and what a cold cache would cost. */
+function TempRow(E: Els, v: View, width: number) {
+  const { Box, Text } = E
+  const hn = heat(v)
+  const ctx = fmtTokens(v.u?.ctxTokens)
+  const say = !hn
+    ? 'warms up with the first reply'
+    : hn.isLive
+      ? 'kept warm while Claude works'
+      : hn.left === 0
+        ? `cold: the next message writes all ${ctx} again (~12× the input of a warm one)`
+        : `warm: the next message reads ${ctx} from cache, at a tenth of the price`
+  const fig = (
+    <Text>
+      <Text bold tabular color={hn ? heatColor(hn.pct) : v.mute}>
+        {' '}
+        {heatLabel(hn)}
+      </Text>
+      <Text color={hn && !hn.isLive && hn.left === 0 ? HEAT[0] : v.mute}>  · {say}</Text>
+    </Text>
+  )
+  const before = isGfx(E, v) ? (
+    <Box width={12} paddingLeft={2} flexShrink={0}>
+      {Chip(E, 'TEMP', v)}
+    </Box>
+  ) : (
+    <Text>
+      {'  '}
+      {Chip(E, 'TEMP'.padEnd(9, ' '), v)}{' '}
+    </Text>
+  )
+  return BarRow(E, v, hn?.pct ?? 0, width, before, fig, HEAT)
+}
+
 /**
  * The two-line card in its frame. Below the prompt Claude Code lists running agents and
  * tasks, and every row they take comes out of this band: under 4 rows the frame goes
@@ -988,6 +1080,7 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
           {BarRow(E, v, ctxPct, barW, Chip(E, 'CTX', v), Pct(E, v, ctxPct, ctxSuffix))}
           {five ? BarRow(E, v, five.percentUsed, barW, Chip(E, '5H', v), Pct(E, v, five.percentUsed, fiveSuffix)) : null}
           {week && cols >= 85 ? BarRow(E, v, week.percentUsed, Math.max(3, barW - 3), Chip(E, '7D', v), Pct(E, v, week.percentUsed)) : null}
+          {TempGauge(E, v, Math.max(3, barW - 3))}
         </Box>
       ) : null}
       {/* one Text per row: sibling Texts in a row Box wrap into columns once the band narrows */}
@@ -998,6 +1091,9 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
         {five ? Gauge(E, '5H', five.percentUsed, barW, v, fiveSuffix) : null}
         {week && cols >= 85 ? <Text>{'  '}</Text> : null}
         {week && cols >= 85 ? Gauge(E, '7D', week.percentUsed, Math.max(3, barW - 3), v) : null}
+        {/* the first gauge to go on a narrow band */}
+        {cols >= 100 ? <Text>{'  '}</Text> : null}
+        {cols >= 100 ? TempGauge(E, v, Math.max(3, barW - 3)) : null}
       </Text>
       ) : null}
       <Box flexDirection="row" gap={2}>
@@ -1070,7 +1166,7 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
   }
   const agentRows = grant(1, Math.max(1, Math.min(8, v.ag.length)) + (v.ag.length > 8 ? 1 : 0))
   const limitRows = grant(1, Math.max(1, limits.length * 2))
-  const sessionRows = grant(1, v.s.working && v.s.lastAction ? 2 : 1)
+  const sessionRows = grant(1, v.s.working && v.s.lastAction ? 3 : 2)
   const catRows = grant(0, Math.min(6, used.length))
   const peerRows = grant(1, Math.max(1, Math.min(6, v.pe.length)))
   const tipRows = advice.length > 0 ? grant(1, advice.length) : -1
@@ -1207,7 +1303,8 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
         {Chip(E, `out ${fmtTokens(v.s.output)}`, v)}
       </Text>
       ) : null}
-      {sessionRows >= 2 ? (
+      {sessionRows >= 2 ? TempRow(E, v, bigW) : null}
+      {sessionRows >= 3 ? (
         <Text wrap="truncate-end">
           <Text color={v.mute}>  now </Text>
           <Text color={v.ink}>{v.s.lastAction}</Text>
@@ -1383,6 +1480,9 @@ type Runtime = {
   last: { agents: number; viewer: number; peers: number; usage: number }
   // highest threshold already announced, per limit kind and for the context ('ctx')
   warned: Map<string, number>
+  cacheTtl: number
+  // the reply whose cooling cache was already announced
+  coolWarnedFor: number
   timer?: { cancel: () => void }
   isLooping: boolean
 }
@@ -1419,6 +1519,12 @@ async function tick($: EngineInterface, rt: Runtime): Promise<number> {
     last.usage = at
     await refreshUsage($).catch(() => undefined)
   }
+  // one toast per reply as its cache is about to go cold (a minute ahead on a 5-minute cache)
+  const left = s.warmAt === undefined ? 0 : s.warmAt + rt.cacheTtl - at
+  if (!isBusy && s.warmAt !== undefined && left > 0 && left <= Math.min(120_000, rt.cacheTtl / 5) && rt.coolWarnedFor !== s.warmAt) {
+    rt.coolWarnedFor = s.warmAt
+    $.ui.toast(`✻ The prompt cache goes cold in ${fmtLeft(left)}: a message before then keeps it warm`)
+  }
   return tickDelay(rt.motion, isAnimating)
 }
 
@@ -1452,6 +1558,8 @@ export const register: Register = (on, options) => {
     last: { agents: 0, viewer: 0, peers: 0, usage: 0 },
     warned: new Map(),
     isLooping: false,
+    cacheTtl: options.cacheTtl === '5m' ? 5 * 60_000 : HOUR_MS,
+    coolWarnedFor: -1,
   }
   const { link } = rt
 
@@ -1462,6 +1570,7 @@ export const register: Register = (on, options) => {
     const at = await $.clock.now()
     await update($, stats, s => ({ ...s, startedAt: u.startedAt }))
     await update($, motionAtom, () => rt.motion)
+    await update($, cacheTtl, () => rt.cacheTtl)
     const saved = await $.store.get('theme').catch(() => undefined)
     if (typeof saved === 'number' && Number.isInteger(saved)) await update($, themeIdx, () => saved)
     await update($, now, () => at)
@@ -1556,6 +1665,10 @@ export const register: Register = (on, options) => {
     if (id && u) {
       const ctx = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
       await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens: ctx, model: u.model } : a))).catch(() => undefined)
+    } else if (!id && u) {
+      // each main-thread response rewrites the prompt cache: its lifetime starts over
+      const at = await $.clock.now()
+      await update($, stats, s => ({ ...s, warmAt: at })).catch(() => undefined)
     }
     return result
   })
@@ -1585,6 +1698,7 @@ export const register: Register = (on, options) => {
       doneAt: e.isAborted ? 0 : at,
       abortAt: e.isAborted ? at : s.abortAt,
       celebrateUntil: at + (e.isAborted ? SHAKE_MS : DONE_MS),
+      warmAt: u ? at : s.warmAt,
     }))
     await update($, now, () => at)
     await refreshUsage($).catch(() => undefined)
