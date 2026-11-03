@@ -77,10 +77,10 @@ test('desktop surface draws every view', async ($, on) => {
     // (a proportional face leaves gaps between their lines)
     const glyphs = /[▀▄█▏▎▍▌▋▊▉▮─╼╾]/
     expect(glyphs.test(JSON.stringify(await band.drawn()))).toBe(surface === 'terminal')
-    expect((await band.findAll({ type: 'Svg' })).length).toBe(surface === 'desktop' ? 3 : 0)
+    expect((await band.findAll({ type: 'Svg' })).length).toBe(surface === 'desktop' ? 4 : 0)
     await band.press({ key: 'toggle' })
     expect(glyphs.test(JSON.stringify(await band.drawn()))).toBe(surface === 'terminal')
-    expect((await band.findAll({ type: 'Svg' })).length).toBe(surface === 'desktop' ? 3 : 0)
+    expect((await band.findAll({ type: 'Svg' })).length).toBe(surface === 'desktop' ? 4 : 0)
     await band.press({ key: 'panel' })
     for (const id of ['spark-hud-panel', 'spark-hud-agent']) {
       const pane = await $.ui.mount({

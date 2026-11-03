@@ -78,6 +78,8 @@ export type HudStats = {
   abortAt?: number
   /** The last turn finished and no prompt has been sent since: the DONE sign shows. */
   isReady?: boolean
+  /** When the main thread last got a response: the prompt cache stays warm for the TTL after it. */
+  warmAt?: number
 }
 
 declare module 'claude-code' {
@@ -95,6 +97,8 @@ declare module 'claude-code' {
       viewerAgent: string | null
       viewerRows: HudViewRow[]
       motion: string
+      /** The prompt cache's lifetime in ms, from the cacheTtl setting. */
+      cacheTtl: number
     }
   }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+- **Chat temperature (TEMP).** A new gauge in the compact card shows whether the prompt cache is still warm: it drains like a thermometer from the last reply, orange to blue, with the time left and then `cold`, and stays full while Claude works. A cold cache makes the next message write the whole context again, about 12× the input of a warm one.
+- The expanded view's session section says what the next message will cost, warm or cold.
+- One toast a couple of minutes before the cache goes cold (a minute ahead on a 5-minute cache), once per reply.
+- **New setting** `cacheTtl` (`1h` / `5m`, default `1h`): Claude Code does not report the cache lifetime.
+- On a narrow terminal TEMP is the first gauge to go.
+
 ## 0.6.0
 
 Built for the Claude desktop app as well as the terminal.

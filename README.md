@@ -35,6 +35,12 @@ It is built for people who run long sessions on a **Pro or Max subscription** an
 - A breakdown of what fills the window (messages, system tools, MCP tools, memory files) when expanded.
 - One toast when you pass 85%, a good moment to `/compact`.
 
+### 🌡️ Chat temperature: is the prompt cache still warm?
+- After every reply the API keeps the conversation in the prompt cache for a while (5 minutes or 1 hour). While it is **warm**, your next message reads the context at a tenth of the input price. Once it goes **cold**, the whole context is written again at 1.25×: with 244k tokens of context that one message costs about **12× the input** of a warm one, all of it out of your plan limits.
+- The **TEMP** gauge drains like a thermometer from the last reply, orange to blue, with the time left (`58m`, `9m`) and then `cold`. It stays full while Claude works.
+- The expanded view says what the next message will cost, warm or cold, and one toast comes a couple of minutes before the cache cools.
+- Claude Code does not report the cache lifetime, so set it in [Settings](#settings) (`cacheTtl`, 1 hour by default).
+
 ### ⏳ Plan limits, with pace forecasting
 - **5-hour** and **7-day** windows with their reset countdowns.
 - **Pace forecast**: compares the share of the limit you've used with the share of time that has passed, and tells you whether you're *comfortable*, *ahead of pace*, or *on track to run out before the reset* (and when).
@@ -107,7 +113,7 @@ Claude Code reads a folder marketplace straight from disk. After you edit the fi
 | `◐ theme` or `/hud-theme` | Switch to the next color theme |
 | `ctrl+x tab` | Focus the HUD to use its buttons from the keyboard |
 
-The layout adapts to the terminal width and height. On narrow terminals the bars get shorter and the secondary figures are hidden; when Claude Code's own agent list below the prompt takes rows from the band, the HUD drops its frame and then its gauges instead of being squashed.
+The layout adapts to the terminal width and height. On narrow terminals the bars get shorter and the secondary figures are hidden (TEMP goes first, then 7D); when Claude Code's own agent list below the prompt takes rows from the band, the HUD drops its frame and then its gauges instead of being squashed.
 
 In the **Claude desktop app** (Code tab) the HUD draws natively for the app: the mascot and the bars are crisp vector art instead of block characters, the text follows the app's light or dark theme, and the gauges wrap onto a new line when the window is narrow. The buttons, `/hud` commands and settings are the same. After installing or updating, run `/reload-plugins` in the session.
 
@@ -118,6 +124,7 @@ Change them in `/config` (each one is a row there), or in `~/.claude/settings.js
 | Setting | Default | What it does |
 |---|---|---|
 | `animation` | `full` | `full`: smooth motion while Claude works, one redraw a second at rest. `calm`: slower motion. `off`: no motion at all, and a redraw every 15 s at rest |
+| `cacheTtl` | `1h` | How long the prompt cache stays warm after a reply, for the TEMP gauge: `1h` or `5m`. Claude Code does not report it, so match your setup |
 | `shareWithOtherWindows` | `true` | `false`: no status file is written or read, and the *Other windows* list stays empty |
 
 ```json
