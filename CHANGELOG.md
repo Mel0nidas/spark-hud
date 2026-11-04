@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+
+- **TEMP in the expanded view sits under the context bar.** It was in the session section, which a short band (the desktop app's) leaves out, so it never showed there.
+- **The TEMP bar is as long as CTX and 5H**, and colored by how warm the cache is now: orange while hot, amber as it cools, blue near cold. A full bar no longer shows a blue end.
+
 ## 0.7.0
 
 - **Chat temperature (TEMP).** A new gauge in the compact card shows whether the prompt cache is still warm: it drains like a thermometer from the last reply, orange to blue, with the time left and then `cold`, and stays full while Claude works. A cold cache makes the next message write the whole context again, about 12× the input of a warm one.

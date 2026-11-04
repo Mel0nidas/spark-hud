@@ -967,7 +967,7 @@ function Header(E: Els, text: string, v: View, count?: string) {
 // setting). While warm, the next message reads the context at a tenth of the input price;
 // once cold, it writes it all again at 1.25x, about 12x as much, all of it from the limits.
 
-/** Cold to hot along the bar: as it drains, what is left runs from amber to blue. */
+/** Cold, cooling, hot: blue, amber, orange (no alert red: here hot is good). */
 const HEAT = ['#6C9BC8', '#D9A441', '#E0703A']
 
 type Heat = { pct: number; left: number; isLive: boolean }
@@ -982,6 +982,11 @@ function heat(v: View): Heat | undefined {
 
 function heatColor(pct: number): string {
   return pct > 50 ? HEAT[2]! : pct > 15 ? HEAT[1]! : HEAT[0]!
+}
+
+/** The bar's colors by how warm it is now: a full bar is all warm, with no cold end. */
+function heatStops(pct: number): string[] {
+  return pct > 50 ? [HEAT[1]!, HEAT[2]!] : pct > 15 ? [HEAT[0]!, HEAT[1]!] : [HEAT[0]!]
 }
 
 /** Time left warm, rounded up: '60m', '9m', '40s'. */
@@ -1002,20 +1007,20 @@ function TempGauge(E: Els, v: View, width: number) {
       {heatLabel(hn)}
     </Text>
   )
-  if (isGfx(E, v)) return BarRow(E, v, hn?.pct ?? 0, width, Chip(E, 'TEMP', v), fig, HEAT)
+  if (isGfx(E, v)) return BarRow(E, v, hn?.pct ?? 0, width, Chip(E, 'TEMP', v), fig, heatStops(hn?.pct ?? 0))
   return (
     <Text>
       {Chip(E, 'TEMP', v)}
       <Text> </Text>
-      {GradBar(E, hn?.pct ?? 0, width, v, v.s.working, HEAT)}
+      {GradBar(E, hn?.pct ?? 0, width, v, v.s.working, heatStops(hn?.pct ?? 0))}
       {fig}
     </Text>
   )
 }
 
-/** The expanded view's TEMP row: the gauge, and what a cold cache would cost. */
+/** The expanded view's TEMP row, under the context bar: the gauge, and what a cold cache would cost. */
 function TempRow(E: Els, v: View, width: number) {
-  const { Box, Text } = E
+  const { Text } = E
   const hn = heat(v)
   const ctx = fmtTokens(v.u?.ctxTokens)
   const say = !hn
@@ -1034,17 +1039,7 @@ function TempRow(E: Els, v: View, width: number) {
       <Text color={hn && !hn.isLive && hn.left === 0 ? HEAT[0] : v.mute}>  · {say}</Text>
     </Text>
   )
-  const before = isGfx(E, v) ? (
-    <Box width={12} paddingLeft={2} flexShrink={0}>
-      {Chip(E, 'TEMP', v)}
-    </Box>
-  ) : (
-    <Text>
-      {'  '}
-      {Chip(E, 'TEMP'.padEnd(9, ' '), v)}{' '}
-    </Text>
-  )
-  return BarRow(E, v, hn?.pct ?? 0, width, before, fig, HEAT)
+  return BarRow(E, v, hn?.pct ?? 0, width, <Text>{'  '}</Text>, fig, heatStops(hn?.pct ?? 0))
 }
 
 /**
@@ -1080,7 +1075,7 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
           {BarRow(E, v, ctxPct, barW, Chip(E, 'CTX', v), Pct(E, v, ctxPct, ctxSuffix))}
           {five ? BarRow(E, v, five.percentUsed, barW, Chip(E, '5H', v), Pct(E, v, five.percentUsed, fiveSuffix)) : null}
           {week && cols >= 85 ? BarRow(E, v, week.percentUsed, Math.max(3, barW - 3), Chip(E, '7D', v), Pct(E, v, week.percentUsed)) : null}
-          {TempGauge(E, v, Math.max(3, barW - 3))}
+          {TempGauge(E, v, barW)}
         </Box>
       ) : null}
       {/* one Text per row: sibling Texts in a row Box wrap into columns once the band narrows */}
@@ -1093,7 +1088,7 @@ function compactBody(E: Els, v: View, cols: number, onToggle: () => void, rows: 
         {week && cols >= 85 ? Gauge(E, '7D', week.percentUsed, Math.max(3, barW - 3), v) : null}
         {/* the first gauge to go on a narrow band */}
         {cols >= 100 ? <Text>{'  '}</Text> : null}
-        {cols >= 100 ? TempGauge(E, v, Math.max(3, barW - 3)) : null}
+        {cols >= 100 ? TempGauge(E, v, barW) : null}
       </Text>
       ) : null}
       <Box flexDirection="row" gap={2}>
@@ -1155,9 +1150,10 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
   const limits = v.u?.limits ?? []
   const advice = tips(v)
 
-  // Fit the band's rows (fullscreen gives it half the terminal): the 4-row avatar block and
+  // Fit the band's rows (fullscreen gives it half the terminal): the avatar block (4 rows, and
+  // TEMP under the context bar) and
   // the closing rule always show; sections get the rest by priority, agents first.
-  let room = Math.max(0, maxRows - 5)
+  let room = Math.max(0, maxRows - 6)
   const grant = (header: number, items: number): number => {
     if (room < header + Math.min(1, items)) return -1
     const n = Math.min(items, room - header)
@@ -1166,7 +1162,7 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
   }
   const agentRows = grant(1, Math.max(1, Math.min(8, v.ag.length)) + (v.ag.length > 8 ? 1 : 0))
   const limitRows = grant(1, Math.max(1, limits.length * 2))
-  const sessionRows = grant(1, v.s.working && v.s.lastAction ? 3 : 2)
+  const sessionRows = grant(1, v.s.working && v.s.lastAction ? 2 : 1)
   const catRows = grant(0, Math.min(6, used.length))
   const peerRows = grant(1, Math.max(1, Math.min(6, v.pe.length)))
   const tipRows = advice.length > 0 ? grant(1, advice.length) : -1
@@ -1217,6 +1213,7 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
               </Text>
             </Text>,
           )}
+          {TempRow(E, v, Math.max(8, Math.min(bigW, w - 48)))}
         </Box>
       ))}
       {used.slice(0, Math.max(0, catRows)).map((c, i) => {
@@ -1303,8 +1300,7 @@ function expandedView(E: Els, v: View, cols: number, maxRows: number, $: EngineI
         {Chip(E, `out ${fmtTokens(v.s.output)}`, v)}
       </Text>
       ) : null}
-      {sessionRows >= 2 ? TempRow(E, v, bigW) : null}
-      {sessionRows >= 3 ? (
+      {sessionRows >= 2 ? (
         <Text wrap="truncate-end">
           <Text color={v.mute}>  now </Text>
           <Text color={v.ink}>{v.s.lastAction}</Text>

@@ -39,8 +39,8 @@ function setup(on: On) {
 const turn = (id: string) => ({ answer: '', durationMs: 1000, isAborted: false, turnId: id, reason: 'answer', usage: USAGE }) as const
 
 // animation off: a tick every 15 s at rest, and the band is mounted only to look at it,
-// so hours on the mocked clock stay quick
-test('TEMP: a dash before the first reply, warm while working, then it counts down and goes cold', { options: { animation: 'off' } }, async ($, on) => {
+// so hours on the mocked clock stay quick; two simulated hours still take a few seconds
+test('TEMP: a dash before the first reply, warm while working, then it counts down and goes cold', { options: { animation: 'off' }, timeoutMs: 60_000 }, async ($, on) => {
   const { clock, toasts } = setup(on)
   const look = async (surface: 'terminal' | 'desktop' = 'terminal', press?: string) => {
     const band = await $.ui.mount({ surface, ...BAND })
